@@ -33,8 +33,11 @@ jobs:
 
       - name: Install cmake-format
         run: |
-          python3 -m pip install --user cmakelang==0.6.13
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          python3 -m venv cmakelang-venv
+          source cmakelang-venv/bin/activate
+          pip install --upgrade pip
+          pip install cmakelang==0.6.13
+          echo "$PWD/cmakelang-venv/bin" >> "$GITHUB_PATH"
 
       - name: Check C++ formatting
         run: |

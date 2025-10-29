@@ -54,6 +54,17 @@ clang++ --version   # or g++/cl.exe
 ninja --version     # optional, skip if using an alternate generator
 ```
 
+### Formatting Tools
+- Install `clang-format` through your package manager (`brew install clang-format`, `sudo apt install clang-format`, or the Visual Studio installer).
+- Create a small virtual environment for `cmake-format` to avoid system Python restrictions:
+  ```bash
+  python3 -m venv .cmake-format
+  source .cmake-format/bin/activate
+  pip install cmakelang==0.6.13
+  # Optional: echo "$(pwd)/.cmake-format/bin" >> ~/.bash_profile
+  ```
+  Reactivate the environment (or export the path) before running `cmake-format`.
+
 ### Configure & Build
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
