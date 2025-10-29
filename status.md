@@ -4,9 +4,9 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 0 — Project setup
 - **Focus:** Scope definition, repo scaffolding, CI/tooling.
-- **Done:** Established contributor guide (`AGENTS.md`); created status tracking workflow; captured scope & success criteria in `scope.md`.
-- **Next:** Finalize repo layout (sim/, policies/, workloads/, profiles/, experiments/, plots/, thesis/).
-- **Remaining:** Stand up CI + formatting hooks, ensure `make test` (or equivalent) passes on clean checkout.
+- **Done:** Established contributor guide (`AGENTS.md`); created status tracking workflow; captured scope & success criteria in `scope.md`; scaffolded repository layout; introduced CMake+Ninja build with placeholder simulator library and smoke test (`sim/`).
+- **Next:** Author GitHub Actions workflow (Linux + macOS) running configure, build, and `ctest`.
+- **Remaining:** Add formatting hooks (clang-format/cmake-format), document toolchain bootstrap, ensure clean checkout builds/tests successfully on all target platforms.
 
 ## Phase 1 — Requirements & baseline research
 - **Focus:** Requirements spec and related-work matrix.

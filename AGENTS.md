@@ -1,34 +1,34 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `src/` houses the parser state machine, public interface, demo harness, and SIMD helper (current C sources scheduled for C++ refactors).
-- `tests/` stores unit suites such as `parser_tests.c`; place new `test_*` cases beside existing ones and convert to C++ when dependencies require it.
-- `benchmarks/` holds latency/throughput drivers (`bench_parser.c`) for hot-path regressions.
-- Build artifacts (`http-server`, `parser_tests`, `bench_parser`) land in the repo root; clear them with `make clean` before committing.
+- `sim/` hosts the simulator engine (event loop, resources, shared utilities); expect C++20 sources under `sim/src/` and tests under `sim/tests/`.
+- `policies/` contains the DSL parser/runtime plus stock policy implementations; co-locate policy examples under `policies/examples/`.
+- `workloads/` tracks DAG specs, arrival models, and workload templates; `profiles/` stores hardware parameter files and documentation.
+- `experiments/`, `plots/`, and `thesis/` capture configurations, analysis scripts, and writing assets respectively; update the per-folder `README.md` files when structure evolves.
 
 ## Workflow & Status Tracking
 - Consult `status.md` before starting work to see active phase goals, Done/Next/Remaining bullets, and recent decisions.
 - After every coding session, append succinct updates under the touched phase: note shipped changes, queue the next actionable task, and flag remaining blockers.
-- Create new sub-bullets only when a phase expands; otherwise edit in place so the history reflects the latest plan of record.
+- Create new sub-bullets only when a phase expands; otherwise edit in place so the record stays current.
 
 ## Build, Test, and Development Commands
-- `make` builds the demo server with `-O3 -Wall -Wextra -march=native` (switch to C++ compiler flags as sources migrate to `.cc`).
-- `make test` compiles and runs the parser regression suite; keep it green.
-- `make bench` emits `bench_parser` and executes the throughput check; record deltas when tuning hot paths.
-- `make clean` removes binaries; use before packaging patches.
+- `cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo` configures the project (once CMakeLists lands); rerun after dependency changes.
+- `cmake --build build` compiles simulator libraries, policy modules, and tests.
+- `ctest --test-dir build` executes the unit/integration suite; keep it green before pushing.
+- `ninja -C build benchmarks` (planned) produces performance harnesses once available.
 
 ## Coding Style & Naming Conventions
-- Target C++20 (transitioning from C); prefer 4-space indentation, K&R-style braces, and RAII helpers where practical.
-- `http_parser_*` remains the public prefix; internal state constants stay in all caps (`STATE_*`, `FLAG_*`), while new C++ types favor `PascalCase` classes and `snake_case` methods.
-- Favor explicit bounds checks and early returns to preserve zero-allocation guarantees.
-- Assembly in `simd_scan.S` must guard architecture-specific paths and fall back gracefully.
+- Target C++20 with 4-space indentation, K&R-style braces, RAII helpers, and `const` correctness; prefer `.cc`/`.hh` or `.cpp`/`.hpp` consistently (default: `.cc`/`.hh`).
+- Namespaces follow `nicloadoff::module`; classes use `PascalCase`, methods/functions `snake_case`, constants `kCamelCase`, and enums `PascalCase`.
+- Ensure zero/low allocation on hot paths; document invariants near complex scheduling logic.
+- YAML/JSON schemas live beside their loaders; validate inputs and surface actionable error messages.
 
 ## Testing Guidelines
-- Extend `tests/parser_tests.c` with `test_*` cases for new request shapes, error branches, and limit handling.
-- When adding callbacks or flags, assert success paths and failure codes (e.g., `HTTP_PARSER_HEADER_OVERFLOW`) to avoid silent regressions.
-- Run `make test` after each change; add sanitizers (`ASAN`, `UBSAN`) or fuzz harnesses when touching parsing logic.
+- Place simulator unit tests under `sim/tests/` (e.g., `event_queue_test.cc`) and policy tests under `policies/tests/`; name test binaries `*_test`.
+- Cover success paths and corner cases (resource contention, overflow conditions, state snapshots) with GoogleTest or Catch2; add property-based tests for invariants.
+- Run `ctest --output-on-failure` before pushes; enable sanitizers (ASAN, UBSAN, TSAN) in CI for new subsystems.
 
 ## Commit & Pull Request Guidelines
-- Follow Conventional Commit prefixes (`feat:`, `fix:`, `refactor:`, `test:`) with concise, imperative summaries.
-- Each PR should describe motivation, note functional/perf impacts, and attach `make test` output plus `make bench` metrics when they move.
-- Reference related issues, note platform considerations (SIMD flags, sanitizer findings), and include screenshots only when tooling output adds clarity.
+- Follow Conventional Commit prefixes (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `ci:`) with concise imperative summaries.
+- PR descriptions should call out motivation, functional/performance impact, and include `cmake --build build` + `ctest` outputs (and benchmark diffs once available).
+- Link relevant issues, mention configuration touches (profiles/workloads), and attach figures or logs only when they clarify experimental changes.
