@@ -12,7 +12,11 @@ if(NICLOADOFF_ENABLE_WARNINGS)
   if(MSVC)
     add_compile_options(/W4 /permissive- /Zc:preprocessor)
   else()
-    add_compile_options(-Wall -Wextra -Wpedantic -Werror=return-type)
+    add_compile_options(
+      -Wall
+      -Wextra
+      -Wpedantic
+      -Werror=return-type)
   endif()
 endif()
 

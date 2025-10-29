@@ -21,11 +21,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install clang-format (Ubuntu)
+      - name: Ensure clang-format (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format
+          if ! command -v clang-format >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y clang-format
+          fi
 
       - name: Install clang-format (macOS)
         if: matrix.os == 'macos-latest'
