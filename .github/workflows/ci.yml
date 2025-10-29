@@ -29,9 +29,12 @@ jobs:
             sudo apt-get install -y clang-format
           fi
 
-      - name: Install clang-format (macOS)
+      - name: Ensure clang-format (macOS)
         if: matrix.os == 'macos-latest'
-        run: brew install clang-format
+        run: |
+          if ! command -v clang-format >/dev/null; then
+            brew install clang-format
+          fi
 
       - name: Install cmake-format
         run: |

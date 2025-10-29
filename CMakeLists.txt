@@ -16,7 +16,8 @@ if(NICLOADOFF_ENABLE_WARNINGS)
       -Wall
       -Wextra
       -Wpedantic
-      -Werror=return-type)
+      -Werror=return-type
+    )
   endif()
 endif()
 
