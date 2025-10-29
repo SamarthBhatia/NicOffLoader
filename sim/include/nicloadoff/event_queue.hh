@@ -14,21 +14,21 @@ struct ScheduledEvent {
     double timestamp{};
     std::size_t id{};
 
-    auto operator<=>(const ScheduledEvent &) const = default;
+    auto operator<=>(const ScheduledEvent&) const = default;
 };
 
 class EventQueue {
-public:
+  public:
     EventQueue() = default;
 
-    void push(const ScheduledEvent &event);
+    void push(const ScheduledEvent& event);
     [[nodiscard]] std::optional<ScheduledEvent> pop();
     [[nodiscard]] bool empty() const noexcept;
     [[nodiscard]] std::size_t size() const noexcept;
 
-private:
+  private:
     struct Comparator {
-        bool operator()(const ScheduledEvent &lhs, const ScheduledEvent &rhs) const {
+        bool operator()(const ScheduledEvent& lhs, const ScheduledEvent& rhs) const {
             return lhs.timestamp > rhs.timestamp;
         }
     };

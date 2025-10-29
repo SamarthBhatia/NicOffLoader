@@ -18,19 +18,19 @@ int main() {
     assert(!queue.empty());
     assert(queue.size() == 3);
 
-    auto first = queue.pop();
+    [[maybe_unused]] auto first = queue.pop();
     assert(first.has_value());
     assert(first->id == 2);
 
-    auto second = queue.pop();
+    [[maybe_unused]] auto second = queue.pop();
     assert(second.has_value());
     assert(second->id == 3);
 
-    auto third = queue.pop();
+    [[maybe_unused]] auto third = queue.pop();
     assert(third.has_value());
     assert(third->id == 1);
 
-    auto none = queue.pop();
+    [[maybe_unused]] auto none = queue.pop();
     assert(!none.has_value());
     assert(queue.empty());
     assert(queue.size() == 0);

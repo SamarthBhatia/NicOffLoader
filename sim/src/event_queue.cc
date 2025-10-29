@@ -2,9 +2,7 @@
 
 namespace nicloadoff {
 
-void EventQueue::push(const ScheduledEvent &event) {
-    queue_.push(event);
-}
+void EventQueue::push(const ScheduledEvent& event) { queue_.push(event); }
 
 std::optional<ScheduledEvent> EventQueue::pop() {
     if (queue_.empty()) {
@@ -15,12 +13,8 @@ std::optional<ScheduledEvent> EventQueue::pop() {
     return top;
 }
 
-bool EventQueue::empty() const noexcept {
-    return queue_.empty();
-}
+bool EventQueue::empty() const noexcept { return queue_.empty(); }
 
-std::size_t EventQueue::size() const noexcept {
-    return queue_.size();
-}
+std::size_t EventQueue::size() const noexcept { return queue_.size(); }
 
 } // namespace nicloadoff

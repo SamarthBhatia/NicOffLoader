@@ -28,6 +28,32 @@ Primary planning artifacts live in `scope.md` (goals, success criteria) and `sta
 - Ninja (recommended) or another generator
 - A C++20-compatible toolchain (Clang 17+, GCC 11+, or MSVC 2022)
 
+### Install Dependencies
+- **macOS (Homebrew)**
+  ```bash
+  brew update
+  brew install cmake ninja llvm
+  ```
+  Clang from Homebrew installs under `/opt/homebrew/opt/llvm/bin/clang++`; pass `-DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++` if you want to match CI.
+- **Ubuntu 22.04+**
+  ```bash
+  sudo apt update
+  sudo apt install -y build-essential clang-17 cmake ninja-build
+  sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-17 170 \
+    --slave /usr/bin/clang++ clang++ /usr/bin/clang++-17
+  ```
+  GCC 11+ also works; switch compilers via `-DCMAKE_CXX_COMPILER`.
+- **Windows (MSVC 2022)**
+  - Install Visual Studio 2022 with the *Desktop development with C++* workload and CMake component.
+  - Install Ninja via [ninja-build.org](https://ninja-build.org/) or `choco install ninja`.
+
+Verify each tool:
+```bash
+cmake --version
+clang++ --version   # or g++/cl.exe
+ninja --version     # optional, skip if using an alternate generator
+```
+
 ### Configure & Build
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
@@ -48,3 +74,5 @@ The initial smoke test exercises the placeholder event queue implementation; exp
 
 ## Contributing
 Please read `AGENTS.md` for guidelines on status tracking, coding style, and PR expectations. Update `status.md` after each work session to record progress and queue follow-up tasks.
+
+Format C++ and CMake sources with `clang-format` and `cmake-format` before pushing—the CI workflow enforces both.

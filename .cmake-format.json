@@ -1,0 +1,12 @@
+{
+  "line_width": 100,
+  "tab_size": 4,
+  "use_tabchars": false,
+  "separate_ctrl_name_with_space": false,
+  "separate_fn_name_with_space": false,
+  "dangle_parens": false,
+  "justify_clause": false,
+  "keyword_case": "lower",
+  "enable_sort": true,
+  "autosort": true
+}
