@@ -5,7 +5,7 @@
   "separate_ctrl_name_with_space": false,
   "separate_fn_name_with_space": false,
   "dangle_parens": false,
-  "keyword_case": "lower",
+  "keyword_case": "unchanged",
   "enable_sort": true,
   "autosort": true
 }
