@@ -10,8 +10,8 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 1 — Requirements & baseline research
 - **Focus:** Requirements spec and related-work matrix.
-- **Done:** Drafted baseline requirements specification (`requirements.md`) covering functional/non-functional targets and candidate parameter data sources; created initial hardware/workload parameter source log (`profiles/SOURCES.md`); added baseline BlueField-2 hardware profile (`profiles/bf2_default.yaml`) and documented the schema/loader plan (`profiles/README.md`).
-- **Next:** Validate BF2 parameter picks against latest datasheets/blog posts and capture precise citations, then outline the related-work comparison matrix structure.
+- **Done:** Drafted baseline requirements specification (`requirements.md`) and long-form outline (`thesis/requirements_outline.md`) capturing functional/non-functional targets plus initial parameter source catalog; created initial hardware/workload parameter source log (`profiles/SOURCES.md`); added baseline BlueField-2 hardware profile (`profiles/bf2_default.yaml`) and documented the schema/loader plan (`profiles/README.md`).
+- **Next:** Validate BF2 parameter picks against latest datasheets/blog posts, capture precise citations, and outline the related-work comparison matrix structure with acceptance criteria for each requirement.
 - **Remaining:** Complete related-work comparison matrix; summarize gaps motivating NicLoadOff.
 
 ## Phase 2 — Minimal simulator core
