@@ -35,6 +35,7 @@ Primary planning artifacts live in `scope.md` (goals, success criteria) and `sta
   brew install cmake ninja llvm
   ```
   Clang from Homebrew installs under `/opt/homebrew/opt/llvm/bin/clang++`; pass `-DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++` if you want to match CI.
+  The CI logs show Homebrew emits a short “press Ctrl+C to cancel” countdown before continuing—hold tight and let the install proceed; it does not indicate a failure.
 - **Ubuntu 22.04+**
   ```bash
   sudo apt update

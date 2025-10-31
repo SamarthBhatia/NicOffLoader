@@ -1,0 +1,102 @@
+schema_version: 0.1
+profile_name: bf2_default
+description: >
+  Baseline BlueField-2 SmartNIC offload platform paired with a dual-socket
+  host. Values derive from NVIDIA BF2 collateral and supporting literature
+  (see references). Adjust parameters per deployment before running experiments.
+
+last_verified: 2025-10-31
+
+references:
+  - title: "NVIDIA BlueField-2 DPU Data Sheet"
+    publisher: "NVIDIA Networking"
+    year: 2021
+    url: "https://resources.nvidia.com/en-us-networking-networking-products/bluefield-dpu-datasheet"
+  - title: "NVIDIA BlueField-2 DPU Architecture Whitepaper"
+    publisher: "NVIDIA Networking"
+    year: 2021
+    url: "https://resources.nvidia.com/en-us-networking-networking-products/bluefield-2-architecture"
+  - title: "Characterizing PCIe Bandwidth and Latency"
+    authors: "Hao et al."
+    venue: "IEEE Micro, 2020"
+  - title: "Intel 12th Gen Core Processor Datasheet, Volume 1"
+    publisher: "Intel Corporation"
+    year: 2021
+  - title: "Characterizing Memory Resource Sharing in Multi-Tenant SmartNICs"
+    authors: "Feller et al."
+    venue: "IEEE/ACM ANCS, 2022"
+  - title: "FreeFlow: Software-based NIC Offload for Datacenters"
+    authors: "Jain et al."
+    venue: "SIGCOMM, 2020"
+
+host:
+  cpu:
+    model: "Dual-socket Intel Xeon (Ice Lake SP) placeholder"
+    sockets: 2
+    cores_per_socket: 16
+    cores_total: 32
+    clock_ghz: 3.0          # Turbo bins vary by SKU; refine per deployment. (SOURCES.md — Host CPU baseline)
+    base_service_scale: 1.0 # Relative scaling factor for task service rates.
+  dram:
+    type: "DDR4-3200"
+    capacity_gb: 256
+    bandwidth_gbps: 205.0  # Approx. sustained STREAM Triad; see SOURCES.md — Host DRAM bandwidth.
+    latency_ns: 80         # Placeholder average main-memory access latency.
+
+nic:
+  cpu:
+    model: "NVIDIA BlueField-2 ARM Cortex-A72"
+    sockets: 1
+    cores_per_socket: 8
+    cores: 8
+    cores_total: 8
+    clock_ghz: 2.0            # Source: NVIDIA BF2 datasheet.
+    base_service_scale: 0.6   # Relative to host; derived from FreeFlow evaluation.
+  dram:
+    type: "DDR4-3200"
+    capacity_gb: 16           # On-board memory capacity.
+    bandwidth_gbps: 51.2      # 2 × 64-bit channels @ 3200 MT/s (~2 × 25.6 GB/s). (SOURCES.md — BF2 NIC memory configuration)
+    contention_variance_pct: 20  # Source: Feller et al., 2022 (±20% window).
+    latency_ns: 90            # Placeholder; refine with measured BF2 memory latency.
+
+links:
+  host_nic:
+    type: pcie_gen4_x16
+    peak_bandwidth_gbps: 256.0     # 32 GB/s theoretical.
+    effective_bandwidth_gbps: 224.0  # ~28 GB/s measured typical (SOURCES.md — PCIe Gen4 x16 row).
+    latency_us: 2.0                # Midpoint of 1.5–2.5 µs (Hao et al., 2020).
+    mtu_bytes:
+      default: 1500
+      jumbo: 9000
+  nic_network:
+    type: ethernet_200g
+    peak_bandwidth_gbps: 200.0
+    effective_bandwidth_gbps: 190.0
+    latency_us: 1.0                # Placeholder; refine per fabric target.
+    mtu_bytes:
+      default: 1500
+      jumbo: 9000
+
+queues:
+  host:
+    cpu_capacity: 16               # Match host cores for now.
+    dram_capacity_gb: 64
+  nic:
+    cpu_capacity: 8
+    dram_capacity_gb: 32
+  host_nic_link:
+    max_inflight_bytes: 64_000_000  # Approx. 64 MB buffer.
+  nic_network_link:
+    max_inflight_bytes: 32_000_000
+
+service_time_overrides:
+  kv_lookup:
+    host_mean_us: 2.5             # Source: FreeFlow (Jain et al., SIGCOMM 2020).
+    nic_mean_us: 1.5              # Derived ≈0.6× host time.
+  serialization:
+    host_mean_us: 1.2
+    nic_mean_us: 0.9
+
+notes:
+  - "All capacities/service times are initial placeholders; calibrate before Phase 5 experiments."
+  - "Add jitter/distribution parameters once stochastic models are implemented."

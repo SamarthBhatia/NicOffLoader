@@ -1,4 +1,7 @@
-set(SIM_SOURCES src/event_queue.cc)
+set(SIM_SOURCES
+    src/event_queue.cc
+    src/profile_loader.cc
+)
 
 add_library(nicloadoff_sim STATIC ${SIM_SOURCES})
 target_include_directories(nicloadoff_sim PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

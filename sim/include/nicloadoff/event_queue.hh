@@ -1,9 +1,10 @@
 #ifndef NICLOADOFF_EVENT_QUEUE_HH
 #define NICLOADOFF_EVENT_QUEUE_HH
 
+#include "nicloadoff/sim_types.hh"
+
 #include <compare>
 #include <cstddef>
-#include <functional>
 #include <optional>
 #include <queue>
 #include <vector>
@@ -11,10 +12,10 @@
 namespace nicloadoff {
 
 struct ScheduledEvent {
-    double timestamp{};
-    std::size_t id{};
+    SimTime timestamp{};
+    EventId id{};
+    EventMetadata metadata{};
 
-    auto operator<=>(const ScheduledEvent&) const = default;
 };
 
 class EventQueue {
