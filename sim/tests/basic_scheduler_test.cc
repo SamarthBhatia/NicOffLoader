@@ -1,47 +1,15 @@
 #include "nicloadoff/profile_resources.hh"
 #include "nicloadoff/scheduler.hh"
 #include "nicloadoff/service_time_model.hh"
+#include "nicloadoff/workload.hh"
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <initializer_list>
 
 namespace {
-
-nicloadoff::Task make_task(nicloadoff::TaskId id,
-                           nicloadoff::SimTime arrival,
-                           double cpu_units,
-                           double dram_units,
-                           double link_units,
-                           nicloadoff::Duration service_time) {
-    nicloadoff::Task task;
-    task.id = id;
-    task.arrival_time = arrival;
-    nicloadoff::TaskStage stage;
-    stage.service_time = service_time;
-    stage.requirements = {
-        {.resource_id = 1, .units = cpu_units},
-        {.resource_id = 2, .units = dram_units},
-        {.resource_id = 3, .units = link_units},
-    };
-    task.stages.push_back(stage);
-    return task;
-}
-
-nicloadoff::config::Profile make_test_profile() {
-    nicloadoff::config::Profile profile{};
-    profile.host_cpu.cores_total = 8;
-    profile.host_dram.capacity_gb = 128;
-    profile.host_nic_link.max_inflight_bytes = 64'000'000;
-    profile.nic_cpu.cores_total = 8;
-    profile.nic_dram.capacity_gb = 16;
-    profile.nic_network_link.max_inflight_bytes = 32'000'000;
-
-    profile.service_time_overrides.emplace("kv_lookup",
-                                           nicloadoff::config::ServiceTimeOverride{.host_mean_us = 2.5,
-                                                                                   .nic_mean_us = 1.5});
-    return profile;
-}
 
 void check(bool condition, const char* message) {
     if (!condition) {
@@ -57,21 +25,80 @@ void assert_near(double lhs, double rhs, double tolerance = 1e-9) {
     }
 }
 
+nicloadoff::StageSpec make_stage(nicloadoff::Duration service_time,
+                                 std::initializer_list<std::pair<nicloadoff::ResourceClass, double>> demands) {
+    nicloadoff::StageSpec stage{};
+    stage.deterministic_service_time = service_time;
+    for (const auto& [resource, units] : demands) {
+        stage.demands.push_back(nicloadoff::StageResourceDemand{.resource = resource, .units = units});
+    }
+    return stage;
+}
+
+nicloadoff::StageSpec make_profile_stage(const nicloadoff::ServiceTimeProfileRef& profile_ref,
+                                         std::initializer_list<std::pair<nicloadoff::ResourceClass, double>> demands) {
+    nicloadoff::StageSpec stage{};
+    stage.service_profile = profile_ref;
+    for (const auto& [resource, units] : demands) {
+        stage.demands.push_back(nicloadoff::StageResourceDemand{.resource = resource, .units = units});
+    }
+    return stage;
+}
+
+nicloadoff::config::Profile make_profile(double host_cpu,
+                                         double host_dram,
+                                         double host_link,
+                                         double nic_cpu = 1.0,
+                                         double nic_dram = 1.0,
+                                         double nic_link = 1.0) {
+    nicloadoff::config::Profile profile{};
+    profile.host_cpu.cores_total = static_cast<std::uint32_t>(host_cpu);
+    profile.host_dram.capacity_gb = static_cast<std::uint32_t>(host_dram);
+    profile.host_nic_link.max_inflight_bytes = static_cast<std::size_t>(host_link);
+    profile.nic_cpu.cores_total = static_cast<std::uint32_t>(nic_cpu);
+    profile.nic_dram.capacity_gb = static_cast<std::uint32_t>(nic_dram);
+    profile.nic_network_link.max_inflight_bytes = static_cast<std::size_t>(nic_link);
+    return profile;
+}
+
+nicloadoff::config::Profile make_profile_with_service() {
+    auto profile = make_profile(8.0, 128.0, 64'000'000.0, 8.0, 16.0, 32'000'000.0);
+    profile.service_time_overrides.emplace("kv_lookup",
+                                           nicloadoff::config::ServiceTimeOverride{.host_mean_us = 2.5,
+                                                                                   .nic_mean_us = 1.5});
+    return profile;
+}
+
 } // namespace
 
 int main() {
     {
-        nicloadoff::ResourcePool resources;
-        resources.add_resource(nicloadoff::Resource{1, nicloadoff::ResourceType::kHostCpu, 1.0});
-        resources.add_resource(nicloadoff::Resource{2, nicloadoff::ResourceType::kHostDram, 8.0});
-        resources.add_resource(nicloadoff::Resource{3, nicloadoff::ResourceType::kHostLink, 128.0});
+        auto profile = make_profile(1.0, 8.0, 128.0);
+        auto inventory = nicloadoff::make_resource_inventory_from_profile(profile);
 
-        nicloadoff::BasicScheduler scheduler(std::move(resources));
-        auto task_a = make_task(1, 0.0, 1.0, 2.0, 32.0, 5.0);
-        auto task_b = make_task(2, 1.0, 1.0, 2.0, 32.0, 3.0);
+        nicloadoff::WorkloadSpec workload{};
+        workload.tasks.push_back(nicloadoff::TaskSpec{
+            .id = 1,
+            .arrival_time = 0.0,
+            .stages = {make_stage(5.0,
+                                  {{nicloadoff::ResourceClass::kHostCpu, 1.0},
+                                   {nicloadoff::ResourceClass::kHostDram, 2.0},
+                                   {nicloadoff::ResourceClass::kHostLink, 32.0}})},
+        });
+        workload.tasks.push_back(nicloadoff::TaskSpec{
+            .id = 2,
+            .arrival_time = 1.0,
+            .stages = {make_stage(3.0,
+                                  {{nicloadoff::ResourceClass::kHostCpu, 1.0},
+                                   {nicloadoff::ResourceClass::kHostDram, 2.0},
+                                   {nicloadoff::ResourceClass::kHostLink, 32.0}})},
+        });
 
-        scheduler.submit_task(task_a);
-        scheduler.submit_task(task_b);
+        auto tasks = nicloadoff::make_tasks_from_spec(workload, inventory.ids);
+        nicloadoff::BasicScheduler scheduler(std::move(inventory.pool));
+        for (const auto& task : tasks) {
+            scheduler.submit_task(task);
+        }
         scheduler.run_until_empty();
 
         assert_near(scheduler.current_time(), 8.0);
@@ -80,61 +107,76 @@ int main() {
         check(completed[0] == 1, "expected task 1 to complete first");
         check(completed[1] == 2, "expected task 2 to complete second");
 
-        const auto* cpu = scheduler.resource_pool().find(1);
+        const auto* cpu = scheduler.resource_pool().find(inventory.ids.host_cpu);
         check(cpu != nullptr, "expected CPU resource to be present");
         assert_near(cpu->in_use(), 0.0);
     }
 
     {
-        nicloadoff::ResourcePool resources;
-        resources.add_resource(nicloadoff::Resource{1, nicloadoff::ResourceType::kHostCpu, 2.0});
-        resources.add_resource(nicloadoff::Resource{2, nicloadoff::ResourceType::kHostDram, 8.0});
-        resources.add_resource(nicloadoff::Resource{3, nicloadoff::ResourceType::kHostLink, 128.0});
+        auto profile = make_profile(2.0, 8.0, 128.0);
+        auto inventory = nicloadoff::make_resource_inventory_from_profile(profile);
 
-        nicloadoff::BasicScheduler scheduler(std::move(resources));
-        auto task_c = make_task(3, 0.0, 1.0, 2.0, 32.0, 4.0);
-        auto task_d = make_task(4, 0.0, 1.0, 2.0, 32.0, 6.0);
+        nicloadoff::WorkloadSpec workload{};
+        workload.tasks.push_back(nicloadoff::TaskSpec{
+            .id = 3,
+            .arrival_time = 0.0,
+            .stages = {make_stage(4.0,
+                                  {{nicloadoff::ResourceClass::kHostCpu, 1.0},
+                                   {nicloadoff::ResourceClass::kHostDram, 2.0},
+                                   {nicloadoff::ResourceClass::kHostLink, 32.0}})},
+        });
+        workload.tasks.push_back(nicloadoff::TaskSpec{
+            .id = 4,
+            .arrival_time = 0.0,
+            .stages = {make_stage(6.0,
+                                  {{nicloadoff::ResourceClass::kHostCpu, 1.0},
+                                   {nicloadoff::ResourceClass::kHostDram, 2.0},
+                                   {nicloadoff::ResourceClass::kHostLink, 32.0}})},
+        });
 
-        scheduler.submit_task(task_c);
-        scheduler.submit_task(task_d);
+        auto tasks = nicloadoff::make_tasks_from_spec(workload, inventory.ids);
+        nicloadoff::BasicScheduler scheduler(std::move(inventory.pool));
+        for (const auto& task : tasks) {
+            scheduler.submit_task(task);
+        }
         scheduler.run_until_empty();
 
         assert_near(scheduler.current_time(), 6.0);
         const auto& completed = scheduler.completed_tasks();
         check(completed.size() == 2, "expected two completed tasks in parallel scenario");
-        bool expected_order = (completed[0] == 3 && completed[1] == 4) || (completed[0] == 4 && completed[1] == 3);
+        bool expected_order =
+            (completed[0] == 3 && completed[1] == 4) || (completed[0] == 4 && completed[1] == 3);
         check(expected_order, "unexpected task completion order in parallel scenario");
 
-        const auto* cpu = scheduler.resource_pool().find(1);
+        const auto* cpu = scheduler.resource_pool().find(inventory.ids.host_cpu);
         check(cpu != nullptr, "expected CPU resource to be present in parallel scenario");
         assert_near(cpu->in_use(), 0.0);
     }
 
     {
-        nicloadoff::ResourcePool resources;
-        resources.add_resource(nicloadoff::Resource{10, nicloadoff::ResourceType::kHostCpu, 1.0});
-
-        nicloadoff::config::Profile profile{};
+        auto profile = make_profile(1.0, 1.0, 1'000'000.0);
         profile.service_time_overrides.emplace("kv_lookup",
                                                nicloadoff::config::ServiceTimeOverride{.host_mean_us = 2.5,
                                                                                        .nic_mean_us = 1.5});
+        auto inventory = nicloadoff::make_resource_inventory_from_profile(profile);
         nicloadoff::ServiceTimeModel service_model(profile, /*seed=*/2025);
 
-        nicloadoff::BasicScheduler scheduler(std::move(resources), &service_model);
+        nicloadoff::WorkloadSpec workload{};
+        workload.tasks.push_back(nicloadoff::TaskSpec{
+            .id = 5,
+            .arrival_time = 0.0,
+            .stages = {make_profile_stage(
+                nicloadoff::ServiceTimeProfileRef{.key = "kv_lookup",
+                                                  .domain = nicloadoff::ServiceTimeDomain::kHost,
+                                                  .mode = nicloadoff::ServiceTimeMode::kDeterministic},
+                {{nicloadoff::ResourceClass::kHostCpu, 1.0}})},
+        });
 
-        nicloadoff::Task task{};
-        task.id = 5;
-        task.arrival_time = 0.0;
-        nicloadoff::TaskStage stage{};
-        stage.requirements.push_back({.resource_id = 10, .units = 1.0});
-        stage.service_profile = nicloadoff::ServiceTimeProfileRef{
-            .key = "kv_lookup",
-            .domain = nicloadoff::ServiceTimeDomain::kHost,
-            .mode = nicloadoff::ServiceTimeMode::kDeterministic,
-        };
-        task.stages.push_back(stage);
-
-        scheduler.submit_task(task);
+        auto tasks = nicloadoff::make_tasks_from_spec(workload, inventory.ids);
+        nicloadoff::BasicScheduler scheduler(std::move(inventory.pool), &service_model);
+        for (const auto& task : tasks) {
+            scheduler.submit_task(task);
+        }
         scheduler.run_until_empty();
 
         assert_near(scheduler.current_time(), 2.5);
@@ -144,39 +186,37 @@ int main() {
     }
 
     {
-        auto profile = make_test_profile();
+        auto profile = make_profile_with_service();
         auto inventory = nicloadoff::make_resource_inventory_from_profile(profile);
         nicloadoff::ServiceTimeModel service_model(profile, /*seed=*/99);
 
+        nicloadoff::ServiceTimeProfileRef host_profile{.key = "kv_lookup",
+                                                       .domain = nicloadoff::ServiceTimeDomain::kHost,
+                                                       .mode = nicloadoff::ServiceTimeMode::kDeterministic};
+        nicloadoff::ServiceTimeProfileRef nic_profile{.key = "kv_lookup",
+                                                      .domain = nicloadoff::ServiceTimeDomain::kNic,
+                                                      .mode = nicloadoff::ServiceTimeMode::kDeterministic};
+
+        nicloadoff::WorkloadSpec workload{};
+        nicloadoff::StageSpec stage1 = make_profile_stage(
+            host_profile,
+            {{nicloadoff::ResourceClass::kHostCpu, 4.0}, {nicloadoff::ResourceClass::kHostDram, 32.0}});
+        nicloadoff::StageSpec stage2 = make_profile_stage(
+            nic_profile,
+            {{nicloadoff::ResourceClass::kNicCpu, 6.0}, {nicloadoff::ResourceClass::kNicDram, 8.0}});
+
+        workload.tasks.push_back(nicloadoff::TaskSpec{.id = 6,
+                                                      .arrival_time = 0.0,
+                                                      .stages = {stage1, stage2}});
+        workload.tasks.push_back(nicloadoff::TaskSpec{.id = 7,
+                                                      .arrival_time = 0.0,
+                                                      .stages = {stage1, stage2}});
+
+        auto tasks = nicloadoff::make_tasks_from_spec(workload, inventory.ids);
         nicloadoff::BasicScheduler scheduler(std::move(inventory.pool), &service_model);
-
-        nicloadoff::Task multi_stage_a{};
-        multi_stage_a.id = 6;
-        multi_stage_a.arrival_time = 0.0;
-        nicloadoff::TaskStage stage1_a{};
-        stage1_a.service_profile = nicloadoff::ServiceTimeProfileRef{
-            .key = "kv_lookup",
-            .domain = nicloadoff::ServiceTimeDomain::kHost,
-            .mode = nicloadoff::ServiceTimeMode::kDeterministic,
-        };
-        stage1_a.requirements.push_back({inventory.ids.host_cpu, 4.0});
-        stage1_a.requirements.push_back({inventory.ids.host_dram, 32.0});
-        nicloadoff::TaskStage stage2_a{};
-        stage2_a.service_profile = nicloadoff::ServiceTimeProfileRef{
-            .key = "kv_lookup",
-            .domain = nicloadoff::ServiceTimeDomain::kNic,
-            .mode = nicloadoff::ServiceTimeMode::kDeterministic,
-        };
-        stage2_a.requirements.push_back({inventory.ids.nic_cpu, 6.0});
-        stage2_a.requirements.push_back({inventory.ids.nic_dram, 8.0});
-        multi_stage_a.stages.push_back(stage1_a);
-        multi_stage_a.stages.push_back(stage2_a);
-
-        nicloadoff::Task multi_stage_b = multi_stage_a;
-        multi_stage_b.id = 7;
-
-        scheduler.submit_task(multi_stage_a);
-        scheduler.submit_task(multi_stage_b);
+        for (const auto& task : tasks) {
+            scheduler.submit_task(task);
+        }
         scheduler.run_until_empty();
 
         assert_near(scheduler.current_time(), 5.5);
