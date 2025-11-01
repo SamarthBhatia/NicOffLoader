@@ -33,6 +33,14 @@ class BasicScheduler {
         bool completed{false};
     };
 
+    struct TaskMetrics {
+        TaskId id{};
+        Duration total_queue_time{0.0};
+        Duration total_service_time{0.0};
+        Duration host_service_time{0.0};
+        Duration nic_service_time{0.0};
+    };
+
     explicit BasicScheduler(ResourcePool resources, ServiceTimeModel* service_model = nullptr);
 
     void submit_task(const Task& task);
@@ -50,13 +58,26 @@ class BasicScheduler {
     [[nodiscard]] std::vector<TaskStatus> task_statuses() const;
     [[nodiscard]] std::size_t events_processed() const noexcept { return events_processed_; }
     [[nodiscard]] bool has_pending_work() const noexcept { return !queue_.empty() || !waiting_queue_.empty(); }
+    [[nodiscard]] const std::vector<TaskMetrics>& completed_metrics() const noexcept { return completed_metrics_; }
 
   private:
+    struct StageRuntime {
+        bool ready_recorded{false};
+        bool started{false};
+        SimTime ready_time{0.0};
+        SimTime start_time{0.0};
+        SimTime completion_time{0.0};
+        Duration queue_duration{0.0};
+        Duration service_duration{0.0};
+        std::optional<ServiceTimeDomain> domain;
+    };
+
     struct TaskContext {
         Task task;
         std::size_t stage_index{0};
         bool active{false};
         Duration active_service_time{0.0};
+        std::vector<StageRuntime> stage_runtimes;
     };
 
     EventQueue queue_;
@@ -69,6 +90,7 @@ class BasicScheduler {
     std::vector<TaskId> completed_tasks_;
     std::optional<ScheduledEvent> last_event_;
     std::size_t events_processed_{0};
+    std::vector<TaskMetrics> completed_metrics_;
 
     void handle_event(const ScheduledEvent& event);
     void handle_task_arrival(TaskId id, SimTime timestamp);
@@ -80,6 +102,7 @@ class BasicScheduler {
     void drain_waiting(SimTime timestamp);
     TaskContext& get_task(TaskId id);
     Duration resolve_service_time(const TaskStage& stage, TaskId id);
+    void finalize_task_metrics(const TaskContext& ctx);
 };
 
 } // namespace nicloadoff

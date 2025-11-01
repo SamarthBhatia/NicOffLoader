@@ -257,6 +257,10 @@ struct SimulationSnapshot {
     std::vector<BasicScheduler::TaskStatus> task_statuses;
     std::vector<TaskId> completed_tasks;
     std::vector<Resource> resources;
+    Duration total_queue_time{0.0};
+    Duration total_service_time{0.0};
+    Duration host_service_time{0.0};
+    Duration nic_service_time{0.0};
     bool finished{false};
 };
 
@@ -311,6 +315,12 @@ class SimulationSession {
             snapshot.completed_tasks = scheduler_->completed_tasks();
             snapshot.events_processed = scheduler_->events_processed();
             snapshot.resources = scheduler_->resource_pool().snapshot();
+            for (const auto& metrics : scheduler_->completed_metrics()) {
+                snapshot.total_queue_time += metrics.total_queue_time;
+                snapshot.total_service_time += metrics.total_service_time;
+                snapshot.host_service_time += metrics.host_service_time;
+                snapshot.nic_service_time += metrics.nic_service_time;
+            }
             snapshot.finished = finished_;
         } else {
             snapshot.finished = true;
@@ -587,6 +597,10 @@ void draw_right_panel(WINDOW* win, const AppState& state, const SimulationSnapsh
                (state.host_stochastic ? "stochastic" : "deterministic"));
     print_line(std::string("  NIC service mode: ") +
                (state.nic_stochastic ? "stochastic" : "deterministic"));
+    print_line("  Total queue time: " + format_double(snapshot.total_queue_time, 3) + " us");
+    print_line("  Total service time: " + format_double(snapshot.total_service_time, 3) + " us");
+    print_line("    Host service: " + format_double(snapshot.host_service_time, 3) + " us");
+    print_line("    NIC service:  " + format_double(snapshot.nic_service_time, 3) + " us");
     print_line("  Completed tasks: " + std::to_string(snapshot.completed_tasks.size()));
 
     if (!state.status_message.empty()) {

@@ -29,6 +29,7 @@ void BasicScheduler::submit_task(const Task& task) {
     validate_task(task);
     TaskContext context;
     context.task = task;
+    context.stage_runtimes.resize(task.stages.size());
     tasks_.emplace(task.id, std::move(context));
 
     queue_.push(ScheduledEvent{.timestamp = task.arrival_time,
@@ -83,6 +84,13 @@ void BasicScheduler::handle_task_arrival(TaskId id, SimTime timestamp) {
 
 void BasicScheduler::handle_task_ready(TaskId id, SimTime timestamp) {
     auto& ctx = get_task(id);
+    if (ctx.stage_index < ctx.stage_runtimes.size()) {
+        auto& runtime = ctx.stage_runtimes[ctx.stage_index];
+        if (!runtime.ready_recorded) {
+            runtime.ready_recorded = true;
+            runtime.ready_time = timestamp;
+        }
+    }
     bool started = try_start_task(ctx, timestamp);
     if (!started && waiting_set_.count(id) == 0) {
         waiting_set_.insert(id);
@@ -112,6 +120,19 @@ void BasicScheduler::handle_task_complete(TaskId id, SimTime timestamp) {
 
     ctx.active = false;
     ctx.active_service_time = 0.0;
+    if (ctx.stage_index < ctx.stage_runtimes.size()) {
+        auto& runtime = ctx.stage_runtimes[ctx.stage_index];
+        runtime.completion_time = timestamp;
+        if (!runtime.ready_recorded) {
+            runtime.ready_recorded = true;
+            runtime.ready_time = timestamp;
+            runtime.queue_duration = 0.0;
+        }
+        if (!runtime.started) {
+            runtime.start_time = timestamp;
+            runtime.service_duration = 0.0;
+        }
+    }
     ++ctx.stage_index;
 
     if (ctx.stage_index < ctx.task.stages.size()) {
@@ -119,6 +140,7 @@ void BasicScheduler::handle_task_complete(TaskId id, SimTime timestamp) {
                                    .metadata = {.type = EventType::kTaskReady, .id = id}});
     } else {
         completed_tasks_.push_back(id);
+        finalize_task_metrics(ctx);
     }
 
     drain_waiting(timestamp);
@@ -148,6 +170,22 @@ bool BasicScheduler::try_start_task(TaskContext& ctx, SimTime timestamp) {
 
     ctx.active = true;
     ctx.active_service_time = duration;
+    if (ctx.stage_index < ctx.stage_runtimes.size()) {
+        auto& runtime = ctx.stage_runtimes[ctx.stage_index];
+        runtime.started = true;
+        runtime.start_time = timestamp;
+        runtime.service_duration = duration;
+        if (runtime.ready_recorded) {
+            runtime.queue_duration = std::max<Duration>(0.0, timestamp - runtime.ready_time);
+        } else {
+            runtime.queue_duration = 0.0;
+        }
+        if (stage.service_profile) {
+            runtime.domain = stage.service_profile->domain;
+        } else {
+            runtime.domain.reset();
+        }
+    }
     waiting_set_.erase(ctx.task.id);
     queue_.push(ScheduledEvent{.timestamp = timestamp,
                                .metadata = {.type = EventType::kTaskStart, .id = ctx.task.id}});
@@ -225,6 +263,23 @@ Duration BasicScheduler::resolve_service_time(const TaskStage& stage, TaskId id)
         throw SchedulerError(make_error("stage service time cannot be negative", id));
     }
     return duration;
+}
+
+void BasicScheduler::finalize_task_metrics(const TaskContext& ctx) {
+    TaskMetrics metrics{};
+    metrics.id = ctx.task.id;
+    for (const auto& runtime : ctx.stage_runtimes) {
+        metrics.total_queue_time += runtime.queue_duration;
+        metrics.total_service_time += runtime.service_duration;
+        if (runtime.domain.has_value()) {
+            if (*runtime.domain == ServiceTimeDomain::kHost) {
+                metrics.host_service_time += runtime.service_duration;
+            } else if (*runtime.domain == ServiceTimeDomain::kNic) {
+                metrics.nic_service_time += runtime.service_duration;
+            }
+        }
+    }
+    completed_metrics_.push_back(metrics);
 }
 
 std::optional<ScheduledEvent> BasicScheduler::next_event() const { return queue_.peek(); }
