@@ -1,0 +1,27 @@
+schema_version: 0.1
+workload_name: sequential_host
+description: >
+  Two host-bound tasks arriving one microsecond apart; showcases queueing and sequential execution.
+tasks:
+  - id: 1
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 5.0
+        demands:
+          - resource: host_cpu
+            units: 1.0
+          - resource: host_dram
+            units: 2.0
+          - resource: host_link
+            units: 1024.0
+  - id: 2
+    arrival_time: 1.0
+    stages:
+      - deterministic_service_time: 3.0
+        demands:
+          - resource: host_cpu
+            units: 1.0
+          - resource: host_dram
+            units: 2.0
+          - resource: host_link
+            units: 1024.0

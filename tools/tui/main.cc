@@ -3,6 +3,7 @@
 #include "nicloadoff/scheduler.hh"
 #include "nicloadoff/service_time_model.hh"
 #include "nicloadoff/workload.hh"
+#include "nicloadoff/workload_loader.hh"
 
 #include <ncurses.h>
 
@@ -26,6 +27,7 @@ struct WorkloadPreset {
     std::string name;
     std::string description;
     WorkloadSpec spec;
+    std::optional<std::filesystem::path> source_path;
 };
 
 [[nodiscard]] std::string resource_type_to_string(ResourceType type) {
@@ -187,17 +189,60 @@ struct WorkloadPreset {
         .name = "Sequential host tasks",
         .description = "Two tasks sharing host resources; showcases queue ordering and backlog.",
         .spec = make_sequential_workload(),
+        .source_path = std::nullopt,
     });
     presets.push_back(WorkloadPreset{
         .name = "Parallel host pair",
         .description = "Parallel tasks sharing a two-core host, demonstrating concurrent service.",
         .spec = make_parallel_workload(),
+        .source_path = std::nullopt,
     });
     presets.push_back(WorkloadPreset{
         .name = "Host→NIC pipeline",
         .description = "Two multi-stage tasks that consume host and NIC resources, stressing contention.",
         .spec = make_host_nic_pipeline_workload(),
+        .source_path = std::nullopt,
     });
+    return presets;
+}
+
+std::vector<WorkloadPreset> load_workloads_from_directory(const std::filesystem::path& dir,
+                                                          std::vector<std::string>& errors) {
+    std::vector<WorkloadPreset> presets;
+    std::error_code ec;
+    if (!std::filesystem::exists(dir, ec)) {
+        if (ec) {
+            errors.push_back("Failed to access workloads directory: " + dir.string() + " (" + ec.message() + ")");
+        }
+        return presets;
+    }
+
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+        if (!entry.is_regular_file()) {
+            continue;
+        }
+        auto ext = entry.path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+        if (ext == ".yaml" || ext == ".yml") {
+            files.push_back(entry.path());
+        }
+    }
+
+    std::sort(files.begin(), files.end());
+    for (const auto& path : files) {
+        try {
+            auto loaded = load_workload_from_file(path);
+            WorkloadPreset preset;
+            preset.name = !loaded.workload_name.empty() ? loaded.workload_name : path.stem().string();
+            preset.description = loaded.description.empty() ? ("Loaded from " + path.string()) : loaded.description;
+            preset.spec = std::move(loaded.spec);
+            preset.source_path = path;
+            presets.push_back(std::move(preset));
+        } catch (const std::exception& ex) {
+            errors.push_back(std::string("Failed to load workload '") + path.string() + "': " + ex.what());
+        }
+    }
     return presets;
 }
 
@@ -294,6 +339,7 @@ struct AppState {
     std::vector<std::string> profile_names;
     std::vector<WorkloadPreset> workloads;
     std::vector<std::string> workload_names;
+    std::vector<std::string> load_errors;
 
     int profile_index{0};
     int workload_index{0};
@@ -339,7 +385,11 @@ struct AppState {
         }
 
         workload_index = std::clamp(workload_index, 0, static_cast<int>(workloads.size()) - 1);
-        workload_description = workloads[workload_index].description;
+        const auto& preset = workloads[workload_index];
+        workload_description = preset.description;
+        if (preset.source_path) {
+            workload_description += "\n\nSource: " + preset.source_path->string();
+        }
 
         try {
             session = std::make_unique<SimulationSession>(profile, workloads[workload_index].spec, next_seed);
@@ -350,6 +400,9 @@ struct AppState {
         }
 
         status_message = "Loaded profile and workload. Press space to run or 'n' to step.";
+        if (!load_errors.empty()) {
+            status_message += " | Note: " + load_errors.front();
+        }
         auto_run = false;
         next_seed += 1;
         return true;
@@ -569,9 +622,20 @@ int main() {
     AppState state;
     state.profile_paths = discover_profiles("profiles");
     state.workloads = build_presets();
+
+    const auto workloads_dir = std::filesystem::current_path() / "workloads" / "examples";
+    auto file_presets = load_workloads_from_directory(workloads_dir, state.load_errors);
+    state.workloads.insert(state.workloads.end(), file_presets.begin(), file_presets.end());
+
     state.workload_names.reserve(state.workloads.size());
     for (const auto& preset : state.workloads) {
-        state.workload_names.push_back(preset.name);
+        std::string display = preset.name;
+        if (preset.source_path) {
+            display += " [" + preset.source_path->filename().string() + "]";
+        } else {
+            display += " [builtin]";
+        }
+        state.workload_names.push_back(std::move(display));
     }
 
     state.profile_names.reserve(state.profile_paths.size());
@@ -583,7 +647,11 @@ int main() {
     }
 
     if (!state.workloads.empty()) {
-        state.workload_description = state.workloads.front().description;
+        const auto& preset = state.workloads.front();
+        state.workload_description = preset.description;
+        if (preset.source_path) {
+            state.workload_description += "\n\nSource: " + preset.source_path->string();
+        }
     }
 
     initscr();

@@ -5,6 +5,7 @@ set(SIM_SOURCES
     src/profile_resources.cc
     src/service_time_model.cc
     src/workload.cc
+    src/workload_loader.cc
     src/profile_loader.cc
 )
 

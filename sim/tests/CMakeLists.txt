@@ -17,3 +17,8 @@ add_executable(profile_loader_test profile_loader_test.cc)
 target_link_libraries(profile_loader_test PRIVATE nicloadoff_sim)
 
 add_test(NAME profile_loader_test COMMAND profile_loader_test)
+
+add_executable(workload_loader_test workload_loader_test.cc)
+target_link_libraries(workload_loader_test PRIVATE nicloadoff_sim)
+
+add_test(NAME workload_loader_test COMMAND workload_loader_test)
