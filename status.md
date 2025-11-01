@@ -16,8 +16,8 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 2 — Minimal simulator core
 - **Focus:** Discrete-event engine and initial system model.
-- **Done:** Added foundational simulator types (`sim_types.hh`), extended the event queue to track typed metadata, implemented the YAML-backed profile loader with schema validation (plus tests), wired the simulator build/test scaffolding, drafted concrete Resource/Task abstractions with a basic event-queue-driven scheduler (plus coverage), introduced a profile-aware service-time model with deterministic/stochastic sampling (plus integration tests), wired profile-derived resource inventories + multi-stage contention scenarios into the scheduler tests, added workload-spec helpers so tasks are composed from profile-aware stage/resource descriptors, built an ncurses-driven TUI to step simulations, inspect resources, and review recent events, introduced a YAML-backed workload loader (with fixtures/tests) now driving both the scheduler smoke and TUI menus, surfaced loader diagnostics in the TUI, and added host/NIC stochastic toggles that re-seed the scheduler on demand.
-- **Next:** Capture per-run metrics (queued time, service breakdown) and expose them through the TUI to prep for policy comparisons.
+- **Done:** Added foundational simulator types (`sim_types.hh`), extended the event queue to track typed metadata, implemented the YAML-backed profile loader with schema validation (plus tests), wired the simulator build/test scaffolding, drafted concrete Resource/Task abstractions with a basic event-queue-driven scheduler (plus coverage), introduced a profile-aware service-time model with deterministic/stochastic sampling (plus integration tests), wired profile-derived resource inventories + multi-stage contention scenarios into the scheduler tests, added workload-spec helpers so tasks are composed from profile-aware stage/resource descriptors, built an ncurses-driven TUI to step simulations, inspect resources, and review recent events, introduced a YAML-backed workload loader (with fixtures/tests) now driving both the scheduler smoke and TUI menus, surfaced loader diagnostics in the TUI, added host/NIC stochastic toggles that re-seed the scheduler on demand, instrumented the scheduler with per-task queue/service metrics, enabled JSON exports straight from the TUI, and introduced a reusable run-metrics aggregator feeding both the TUI exporter and the new CLI harness.
+- **Next:** Surface the aggregated timing snapshot through the scheduler/policy boundary and add CLI report validation coverage to lock in the JSON contract.
 - **Remaining:** Broaden scheduler tests to cover profile-driven workloads, multi-stage flows, cross-resource contention cases, and stochastic sampling checks.
 
 ## Phase 3 — Workload model
@@ -52,8 +52,8 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 8 — Experiment harness
 - **Focus:** CLI runner, output schema, plotting scripts.
-- **Done:** Not started.
-- **Next:** Define CLI contract (`sim run --profile …`) and result schema (CSV/Parquet fields).
+- **Done:** Seeded single-run CLI harness (`nicloadoff_cli`) that emits aggregated JSON metrics for simulator runs.
+- **Next:** Extend the CLI with manifest-driven batch execution and finalize the structured results schema (CSV/Parquet fields).
 - **Remaining:** Implement batch execution, produce reproducible plots (throughput vs λ, latency percentiles).
 
 ## Phase 9 — Core experiments

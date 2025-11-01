@@ -1,6 +1,7 @@
 #include "nicloadoff/profile.hh"
 #include "nicloadoff/profile_resources.hh"
 #include "nicloadoff/scheduler.hh"
+#include "nicloadoff/run_metrics.hh"
 #include "nicloadoff/service_time_model.hh"
 #include "nicloadoff/workload.hh"
 #include "nicloadoff/workload_loader.hh"
@@ -12,6 +13,7 @@
 #include <cctype>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <memory>
 #include <optional>
@@ -76,6 +78,33 @@ struct WorkloadPreset {
     std::ostringstream oss;
     oss << "t=" << format_double(event.timestamp, 3) << " " << event_type_to_string(event.metadata.type) << " (#"
         << event.metadata.id << ")";
+    return oss.str();
+}
+
+[[nodiscard]] std::string json_escape(const std::string& value) {
+    std::ostringstream oss;
+    for (char ch : value) {
+        switch (ch) {
+        case '\\':
+            oss << "\\\\";
+            break;
+        case '"':
+            oss << "\\\"";
+            break;
+        case '\n':
+            oss << "\\n";
+            break;
+        case '\r':
+            oss << "\\r";
+            break;
+        case '\t':
+            oss << "\\t";
+            break;
+        default:
+            oss << ch;
+            break;
+        }
+    }
     return oss.str();
 }
 
@@ -331,6 +360,13 @@ class SimulationSession {
     [[nodiscard]] bool finished() const noexcept { return finished_; }
     [[nodiscard]] const std::vector<std::string>& event_log() const noexcept { return event_log_; }
     [[nodiscard]] std::uint64_t seed() const noexcept { return seed_; }
+    [[nodiscard]] const std::vector<BasicScheduler::TaskMetrics>& metrics() const noexcept {
+        static const std::vector<BasicScheduler::TaskMetrics> kEmpty;
+        if (!scheduler_) {
+            return kEmpty;
+        }
+        return scheduler_->completed_metrics();
+    }
 
   private:
     config::Profile profile_;
@@ -479,6 +515,116 @@ struct AppState {
     }
 };
 
+std::string service_mode_string(bool stochastic) { return stochastic ? "stochastic" : "deterministic"; }
+
+std::string sanitize_filename(const std::string& value) {
+    std::string result;
+    result.reserve(value.size());
+    for (char ch : value) {
+        if (std::isalnum(static_cast<unsigned char>(ch)) || ch == '-' || ch == '_') {
+            result.push_back(ch);
+        } else {
+            result.push_back('_');
+        }
+    }
+    if (result.empty()) {
+        result = "workload";
+    }
+    return result;
+}
+
+std::filesystem::path make_metrics_path(const SimulationSession& session, const AppState& state) {
+    std::string workload_tag = "workload";
+    if (!state.workloads.empty() && state.workload_index >= 0 &&
+        state.workload_index < static_cast<int>(state.workloads.size())) {
+        workload_tag = sanitize_filename(state.workloads[state.workload_index].name);
+    }
+    std::string base_name = "metrics_seed" + std::to_string(session.seed()) + "_" + workload_tag + ".json";
+    std::filesystem::path candidate = std::filesystem::current_path() / base_name;
+    int suffix = 1;
+    while (std::filesystem::exists(candidate)) {
+        candidate = std::filesystem::current_path() /
+                    ("metrics_seed" + std::to_string(session.seed()) + "_" + workload_tag + "_" +
+                     std::to_string(suffix) + ".json");
+        ++suffix;
+    }
+    return candidate;
+}
+
+bool write_metrics_report(const SimulationSession& session,
+                          const AppState& state,
+                          const SimulationSnapshot& snapshot,
+                          const std::filesystem::path& path) {
+    std::ofstream out(path);
+    if (!out) {
+        return false;
+    }
+
+    out << "{\n";
+    out << "  \"seed\": " << session.seed() << ",\n";
+    out << "  \"host_service_mode\": \"" << service_mode_string(state.host_stochastic) << "\",\n";
+    out << "  \"nic_service_mode\": \"" << service_mode_string(state.nic_stochastic) << "\",\n";
+    out << "  \"finished\": " << (snapshot.finished ? "true" : "false") << ",\n";
+
+    if (!state.workloads.empty() && state.workload_index >= 0 &&
+        state.workload_index < static_cast<int>(state.workloads.size())) {
+        const auto& preset = state.workloads[state.workload_index];
+        out << "  \"workload\": {\n";
+        out << "    \"name\": \"" << json_escape(preset.name) << "\",\n";
+        out << "    \"source\": \"";
+        if (preset.source_path) {
+            out << json_escape(preset.source_path->string());
+        } else {
+            out << "builtin";
+        }
+        out << "\",\n";
+        out << "    \"description\": \"" << json_escape(preset.description) << "\"\n";
+        out << "  },\n";
+    }
+
+    out << "  \"totals\": {\n";
+    const nicloadoff::RunMetrics run_metrics = nicloadoff::compute_run_metrics(session.metrics());
+    const auto& aggregate = run_metrics.aggregate;
+    const auto& latency_stats = aggregate.latency_stats;
+    out << "    \"queue_time_us\": " << format_double(aggregate.total_queue_time, 6) << ",\n";
+    out << "    \"service_time_us\": " << format_double(aggregate.total_service_time, 6) << ",\n";
+    out << "    \"latency_time_us\": " << format_double(aggregate.total_latency, 6) << ",\n";
+    out << "    \"host_service_time_us\": " << format_double(aggregate.host_service_time, 6) << ",\n";
+    out << "    \"nic_service_time_us\": " << format_double(aggregate.nic_service_time, 6) << ",\n";
+    out << "    \"latency_stats\": {\n";
+    out << "      \"mean_us\": " << format_double(latency_stats.mean, 6) << ",\n";
+    out << "      \"p50_us\": " << format_double(latency_stats.p50, 6) << ",\n";
+    out << "      \"p95_us\": " << format_double(latency_stats.p95, 6) << ",\n";
+    out << "      \"p99_us\": " << format_double(latency_stats.p99, 6) << ",\n";
+    out << "      \"min_us\": " << format_double(latency_stats.min, 6) << ",\n";
+    out << "      \"max_us\": " << format_double(latency_stats.max, 6) << "\n";
+    out << "    },\n";
+    out << "    \"events_processed\": " << snapshot.events_processed << ",\n";
+    out << "    \"completed_tasks\": " << run_metrics.tasks.size() << "\n";
+    out << "  },\n";
+
+    out << "  \"tasks\": [\n";
+    const auto& task_timings = run_metrics.tasks;
+    for (std::size_t i = 0; i < task_timings.size(); ++i) {
+        const auto& timing = task_timings[i];
+        out << "    {\n";
+        out << "      \"task_id\": " << timing.id << ",\n";
+        out << "      \"queue_time_us\": " << format_double(timing.queue_time, 6) << ",\n";
+        out << "      \"service_time_us\": " << format_double(timing.service_time, 6) << ",\n";
+        out << "      \"latency_us\": " << format_double(timing.latency(), 6) << ",\n";
+        out << "      \"host_service_time_us\": " << format_double(timing.host_service_time, 6) << ",\n";
+        out << "      \"nic_service_time_us\": " << format_double(timing.nic_service_time, 6) << "\n";
+        out << "    }";
+        if (i + 1 < task_timings.size()) {
+            out << ",";
+        }
+        out << "\n";
+    }
+    out << "  ]\n";
+    out << "}\n";
+
+    return out.good();
+}
 enum class Focus { Profiles, Workloads };
 
 void draw_menu_section(WINDOW* win,
@@ -522,6 +668,7 @@ void draw_instructions(WINDOW* win, int start_row) {
         "  r     Reset (new seed)",
         "  H     Toggle host service mode",
         "  N     Toggle NIC service mode",
+        "  s     Save metrics to JSON",
         "  q     Quit",
     };
     int row = start_row;
@@ -816,6 +963,24 @@ int main() {
             case 'R':
                 state.reset_session();
                 last_step_time = steady_clock::now();
+                break;
+            case 's':
+            case 'S':
+                if (!state.session) {
+                    state.status_message = "Load a profile/workload first.";
+                } else if (!state.session->finished()) {
+                    state.status_message = "Finish the run before exporting metrics.";
+                } else if (state.session->metrics().empty()) {
+                    state.status_message = "No task metrics available to export.";
+                } else {
+                    SimulationSnapshot snapshot = state.snapshot();
+                    std::filesystem::path path = make_metrics_path(*state.session, state);
+                    if (write_metrics_report(*state.session, state, snapshot, path)) {
+                        state.status_message = "Metrics saved to " + path.string();
+                    } else {
+                        state.status_message = "Failed to write metrics file.";
+                    }
+                }
                 break;
             case 'q':
             case 'Q':

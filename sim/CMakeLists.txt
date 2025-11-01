@@ -7,6 +7,7 @@ set(SIM_SOURCES
     src/workload.cc
     src/workload_loader.cc
     src/profile_loader.cc
+    src/run_metrics.cc
 )
 
 add_library(nicloadoff_sim STATIC ${SIM_SOURCES})

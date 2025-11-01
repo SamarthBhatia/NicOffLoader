@@ -1,0 +1,3 @@
+add_executable(nicloadoff_cli main.cc)
+target_link_libraries(nicloadoff_cli PRIVATE nicloadoff_sim)
+target_compile_features(nicloadoff_cli PRIVATE cxx_std_20)
