@@ -350,8 +350,10 @@ struct AppState {
     std::string workload_description{};
 
     std::unique_ptr<SimulationSession> session;
+    bool host_stochastic{false};
+    bool nic_stochastic{false};
 
-    bool load_selection() {
+    bool load_selection(bool preserve_seed = false) {
         if (workloads.empty()) {
             status_message = "No workload presets available.";
             return false;
@@ -391,8 +393,11 @@ struct AppState {
             workload_description += "\n\nSource: " + preset.source_path->string();
         }
 
+        WorkloadSpec spec = apply_service_modes(preset.spec);
+        std::uint64_t seed_to_use = session && preserve_seed ? session->seed() : next_seed;
+
         try {
-            session = std::make_unique<SimulationSession>(profile, workloads[workload_index].spec, next_seed);
+            session = std::make_unique<SimulationSession>(profile, std::move(spec), seed_to_use);
         } catch (const std::exception& ex) {
             status_message = std::string("Failed to initialise simulation: ") + ex.what();
             session.reset();
@@ -401,10 +406,16 @@ struct AppState {
 
         status_message = "Loaded profile and workload. Press space to run or 'n' to step.";
         if (!load_errors.empty()) {
-            status_message += " | Note: " + load_errors.front();
+            status_message += " (" + std::to_string(load_errors.size()) + " loader warning";
+            if (load_errors.size() > 1) {
+                status_message += "s";
+            }
+            status_message += ")";
         }
         auto_run = false;
-        next_seed += 1;
+        if (!preserve_seed) {
+            next_seed += 1;
+        }
         return true;
     }
 
@@ -419,6 +430,25 @@ struct AppState {
             return false;
         }
         return true;
+    }
+
+    WorkloadSpec apply_service_modes(const WorkloadSpec& base) const {
+        WorkloadSpec spec = base;
+        for (auto& task : spec.tasks) {
+            for (auto& stage : task.stages) {
+                if (!stage.service_profile) {
+                    continue;
+                }
+                if (stage.service_profile->domain == ServiceTimeDomain::kHost) {
+                    stage.service_profile->mode =
+                        host_stochastic ? ServiceTimeMode::kStochastic : ServiceTimeMode::kDeterministic;
+                } else if (stage.service_profile->domain == ServiceTimeDomain::kNic) {
+                    stage.service_profile->mode =
+                        nic_stochastic ? ServiceTimeMode::kStochastic : ServiceTimeMode::kDeterministic;
+                }
+            }
+        }
+        return spec;
     }
 
     void reset_session() {
@@ -480,6 +510,8 @@ void draw_instructions(WINDOW* win, int start_row) {
         "  Space Run/Pause",
         "  n     Step event",
         "  r     Reset (new seed)",
+        "  H     Toggle host service mode",
+        "  N     Toggle NIC service mode",
         "  q     Quit",
     };
     int row = start_row;
@@ -551,10 +583,29 @@ void draw_right_panel(WINDOW* win, const AppState& state, const SimulationSnapsh
         run_state = "FINISHED";
     }
     print_line("  State: " + run_state);
+    print_line(std::string("  Host service mode: ") +
+               (state.host_stochastic ? "stochastic" : "deterministic"));
+    print_line(std::string("  NIC service mode: ") +
+               (state.nic_stochastic ? "stochastic" : "deterministic"));
     print_line("  Completed tasks: " + std::to_string(snapshot.completed_tasks.size()));
 
     if (!state.status_message.empty()) {
         print_line("  Message: " + state.status_message);
+    }
+    if (!state.load_errors.empty()) {
+        print_line("  Loader warnings:");
+        int displayed = 0;
+        for (const auto& error : state.load_errors) {
+            if (row >= getmaxy(win) - 1) {
+                break;
+            }
+            if (displayed >= 3) {
+                print_line("    … (" + std::to_string(state.load_errors.size() - displayed) + " more)");
+                break;
+            }
+            print_line("    - " + error);
+            ++displayed;
+        }
     }
 
     row += 1;
@@ -718,9 +769,34 @@ int main() {
                 }
                 break;
             case 'n':
-            case 'N':
                 state.step_once();
                 last_step_time = steady_clock::now();
+                break;
+            case 'H':
+                state.host_stochastic = !state.host_stochastic;
+                if (state.session) {
+                    if (state.load_selection(true)) {
+                        state.status_message = std::string("Host service mode set to ") +
+                                                (state.host_stochastic ? "stochastic." : "deterministic.");
+                    }
+                } else {
+                    state.status_message = std::string("Host service mode will be ") +
+                                            (state.host_stochastic ? "stochastic" : "deterministic") +
+                                            " on next load.";
+                }
+                break;
+            case 'N':
+                state.nic_stochastic = !state.nic_stochastic;
+                if (state.session) {
+                    if (state.load_selection(true)) {
+                        state.status_message = std::string("NIC service mode set to ") +
+                                                (state.nic_stochastic ? "stochastic." : "deterministic.");
+                    }
+                } else {
+                    state.status_message = std::string("NIC service mode will be ") +
+                                            (state.nic_stochastic ? "stochastic" : "deterministic") +
+                                            " on next load.";
+                }
                 break;
             case 'r':
             case 'R':
