@@ -15,6 +15,8 @@
 
 namespace nicloadoff {
 
+class ServiceTimeModel;
+
 class SchedulerError : public std::runtime_error {
   public:
     explicit SchedulerError(const std::string& message) : std::runtime_error(message) {}
@@ -22,7 +24,7 @@ class SchedulerError : public std::runtime_error {
 
 class BasicScheduler {
   public:
-    explicit BasicScheduler(ResourcePool resources);
+    explicit BasicScheduler(ResourcePool resources, ServiceTimeModel* service_model = nullptr);
 
     void submit_task(const Task& task);
     void run_until_empty();
@@ -37,10 +39,12 @@ class BasicScheduler {
         Task task;
         std::size_t stage_index{0};
         bool active{false};
+        Duration active_service_time{0.0};
     };
 
     EventQueue queue_;
     ResourcePool resources_;
+    ServiceTimeModel* service_model_{nullptr};
     SimTime current_time_{0.0};
     std::unordered_map<TaskId, TaskContext> tasks_;
     std::queue<TaskId> waiting_queue_;
@@ -56,6 +60,7 @@ class BasicScheduler {
     void validate_task(const Task& task) const;
     void drain_waiting(SimTime timestamp);
     TaskContext& get_task(TaskId id);
+    Duration resolve_service_time(const TaskStage& stage, TaskId id);
 };
 
 } // namespace nicloadoff

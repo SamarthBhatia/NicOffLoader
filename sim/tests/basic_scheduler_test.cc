@@ -1,4 +1,5 @@
 #include "nicloadoff/scheduler.hh"
+#include "nicloadoff/service_time_model.hh"
 
 #include <cmath>
 #include <cstdio>
@@ -91,6 +92,39 @@ int main() {
         const auto* cpu = scheduler.resource_pool().find(1);
         check(cpu != nullptr, "expected CPU resource to be present in parallel scenario");
         assert_near(cpu->in_use(), 0.0);
+    }
+
+    {
+        nicloadoff::ResourcePool resources;
+        resources.add_resource(nicloadoff::Resource{10, nicloadoff::ResourceType::kHostCpu, 1.0});
+
+        nicloadoff::config::Profile profile{};
+        profile.service_time_overrides.emplace("kv_lookup",
+                                               nicloadoff::config::ServiceTimeOverride{.host_mean_us = 2.5,
+                                                                                       .nic_mean_us = 1.5});
+        nicloadoff::ServiceTimeModel service_model(profile, /*seed=*/2025);
+
+        nicloadoff::BasicScheduler scheduler(std::move(resources), &service_model);
+
+        nicloadoff::Task task{};
+        task.id = 5;
+        task.arrival_time = 0.0;
+        nicloadoff::TaskStage stage{};
+        stage.requirements.push_back({.resource_id = 10, .units = 1.0});
+        stage.service_profile = nicloadoff::ServiceTimeProfileRef{
+            .key = "kv_lookup",
+            .domain = nicloadoff::ServiceTimeDomain::kHost,
+            .mode = nicloadoff::ServiceTimeMode::kDeterministic,
+        };
+        task.stages.push_back(stage);
+
+        scheduler.submit_task(task);
+        scheduler.run_until_empty();
+
+        assert_near(scheduler.current_time(), 2.5);
+        const auto& completed = scheduler.completed_tasks();
+        check(completed.size() == 1, "expected single completed task when using service profile");
+        check(completed[0] == 5, "expected task 5 to complete");
     }
 
     return 0;
