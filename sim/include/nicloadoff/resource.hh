@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace nicloadoff {
 
@@ -56,6 +57,7 @@ class ResourcePool {
     [[nodiscard]] bool can_allocate(ResourceId id, double units) const;
     void allocate(ResourceId id, double units);
     void release(ResourceId id, double units);
+    [[nodiscard]] std::vector<Resource> snapshot() const;
 
   private:
     std::unordered_map<ResourceId, Resource> resources_;

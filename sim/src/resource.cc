@@ -1,5 +1,6 @@
 #include "nicloadoff/resource.hh"
 
+#include <algorithm>
 #include <sstream>
 
 namespace nicloadoff {
@@ -84,6 +85,17 @@ void ResourcePool::release(ResourceId id, double units) {
         throw ResourceError(make_error("resource not found for release", id));
     }
     resource->release(units);
+}
+
+std::vector<Resource> ResourcePool::snapshot() const {
+    std::vector<Resource> resources;
+    resources.reserve(resources_.size());
+    for (const auto& [id, resource] : resources_) {
+        resources.push_back(resource);
+    }
+    std::sort(resources.begin(), resources.end(),
+              [](const Resource& lhs, const Resource& rhs) { return lhs.id() < rhs.id(); });
+    return resources;
 }
 
 } // namespace nicloadoff

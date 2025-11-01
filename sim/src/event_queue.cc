@@ -13,6 +13,13 @@ std::optional<ScheduledEvent> EventQueue::pop() {
     return top;
 }
 
+std::optional<ScheduledEvent> EventQueue::peek() const {
+    if (queue_.empty()) {
+        return std::nullopt;
+    }
+    return queue_.top();
+}
+
 bool EventQueue::empty() const noexcept { return queue_.empty(); }
 
 std::size_t EventQueue::size() const noexcept { return queue_.size(); }

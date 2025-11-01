@@ -24,6 +24,7 @@ class EventQueue {
 
     void push(const ScheduledEvent& event);
     [[nodiscard]] std::optional<ScheduledEvent> pop();
+    [[nodiscard]] std::optional<ScheduledEvent> peek() const;
     [[nodiscard]] bool empty() const noexcept;
     [[nodiscard]] std::size_t size() const noexcept;
 

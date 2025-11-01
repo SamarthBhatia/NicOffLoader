@@ -19,3 +19,4 @@ endif()
 enable_testing()
 
 add_subdirectory(sim)
+add_subdirectory(tools)

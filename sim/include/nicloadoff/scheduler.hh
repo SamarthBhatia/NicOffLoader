@@ -24,6 +24,15 @@ class SchedulerError : public std::runtime_error {
 
 class BasicScheduler {
   public:
+    struct TaskStatus {
+        TaskId id{};
+        std::size_t stage_index{0};
+        std::size_t total_stages{0};
+        bool active{false};
+        bool waiting{false};
+        bool completed{false};
+    };
+
     explicit BasicScheduler(ResourcePool resources, ServiceTimeModel* service_model = nullptr);
 
     void submit_task(const Task& task);
@@ -33,6 +42,14 @@ class BasicScheduler {
     [[nodiscard]] SimTime current_time() const noexcept { return current_time_; }
     [[nodiscard]] const std::vector<TaskId>& completed_tasks() const noexcept { return completed_tasks_; }
     [[nodiscard]] const ResourcePool& resource_pool() const noexcept { return resources_; }
+    [[nodiscard]] std::optional<ScheduledEvent> last_event() const noexcept { return last_event_; }
+    [[nodiscard]] std::optional<ScheduledEvent> next_event() const;
+    [[nodiscard]] std::size_t event_queue_size() const noexcept { return queue_.size(); }
+    [[nodiscard]] std::size_t waiting_queue_size() const noexcept { return waiting_queue_.size(); }
+    [[nodiscard]] std::vector<TaskId> waiting_tasks() const;
+    [[nodiscard]] std::vector<TaskStatus> task_statuses() const;
+    [[nodiscard]] std::size_t events_processed() const noexcept { return events_processed_; }
+    [[nodiscard]] bool has_pending_work() const noexcept { return !queue_.empty() || !waiting_queue_.empty(); }
 
   private:
     struct TaskContext {
@@ -50,6 +67,8 @@ class BasicScheduler {
     std::queue<TaskId> waiting_queue_;
     std::unordered_set<TaskId> waiting_set_;
     std::vector<TaskId> completed_tasks_;
+    std::optional<ScheduledEvent> last_event_;
+    std::size_t events_processed_{0};
 
     void handle_event(const ScheduledEvent& event);
     void handle_task_arrival(TaskId id, SimTime timestamp);

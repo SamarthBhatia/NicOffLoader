@@ -2,6 +2,8 @@
 
 #include "nicloadoff/service_time_model.hh"
 
+#include <algorithm>
+#include <queue>
 #include <sstream>
 #include <utility>
 
@@ -45,10 +47,12 @@ bool BasicScheduler::step_once() {
     }
     current_time_ = event->timestamp;
     handle_event(*event);
+    ++events_processed_;
     return true;
 }
 
 void BasicScheduler::handle_event(const ScheduledEvent& event) {
+    last_event_ = event;
     switch (event.metadata.type) {
     case EventType::kTaskArrival:
         handle_task_arrival(event.metadata.id, event.timestamp);
@@ -221,6 +225,37 @@ Duration BasicScheduler::resolve_service_time(const TaskStage& stage, TaskId id)
         throw SchedulerError(make_error("stage service time cannot be negative", id));
     }
     return duration;
+}
+
+std::optional<ScheduledEvent> BasicScheduler::next_event() const { return queue_.peek(); }
+
+std::vector<TaskId> BasicScheduler::waiting_tasks() const {
+    std::vector<TaskId> tasks;
+    std::queue<TaskId> copy = waiting_queue_;
+    while (!copy.empty()) {
+        tasks.push_back(copy.front());
+        copy.pop();
+    }
+    return tasks;
+}
+
+std::vector<BasicScheduler::TaskStatus> BasicScheduler::task_statuses() const {
+    std::vector<TaskStatus> statuses;
+    statuses.reserve(tasks_.size());
+    for (const auto& [id, ctx] : tasks_) {
+        TaskStatus status{};
+        status.id = id;
+        status.stage_index = ctx.stage_index;
+        status.total_stages = ctx.task.stages.size();
+        status.active = ctx.active;
+        status.waiting = waiting_set_.count(id) != 0;
+        status.completed = ctx.stage_index >= ctx.task.stages.size();
+        statuses.push_back(status);
+    }
+    std::sort(statuses.begin(), statuses.end(), [](const TaskStatus& lhs, const TaskStatus& rhs) {
+        return lhs.id < rhs.id;
+    });
+    return statuses;
 }
 
 } // namespace nicloadoff
