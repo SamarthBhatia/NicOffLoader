@@ -1,5 +1,7 @@
 set(SIM_SOURCES
     src/event_queue.cc
+    src/resource.cc
+    src/scheduler.cc
     src/profile_loader.cc
 )
 

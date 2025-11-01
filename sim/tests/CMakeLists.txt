@@ -3,6 +3,11 @@ target_link_libraries(event_queue_smoke_test PRIVATE nicloadoff_sim)
 
 add_test(NAME event_queue_smoke_test COMMAND event_queue_smoke_test)
 
+add_executable(basic_scheduler_test basic_scheduler_test.cc)
+target_link_libraries(basic_scheduler_test PRIVATE nicloadoff_sim)
+
+add_test(NAME basic_scheduler_test COMMAND basic_scheduler_test)
+
 add_executable(profile_loader_test profile_loader_test.cc)
 target_link_libraries(profile_loader_test PRIVATE nicloadoff_sim)
 

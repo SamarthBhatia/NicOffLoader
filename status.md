@@ -16,9 +16,9 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 2 — Minimal simulator core
 - **Focus:** Discrete-event engine and initial system model.
-- **Done:** Added foundational simulator types (`sim_types.hh`), extended the event queue to track typed metadata, implemented the YAML-backed profile loader with schema validation (plus tests), and wired the simulator build/test scaffolding.
-- **Next:** Design concrete Resource/Task abstractions (CPU cores, DRAM, links) and integrate them with the event queue for basic scheduling flow.
-- **Remaining:** Implement deterministic/stochastic service times, add unit tests, load hardware profile from YAML/JSON.
+- **Done:** Added foundational simulator types (`sim_types.hh`), extended the event queue to track typed metadata, implemented the YAML-backed profile loader with schema validation (plus tests), wired the simulator build/test scaffolding, and drafted concrete Resource/Task abstractions with a basic event-queue-driven scheduler (plus coverage).
+- **Next:** Plumb deterministic/stochastic service times into the scheduler using profile-derived parameters and flesh out validation helpers.
+- **Remaining:** Add richer scheduler unit tests once service-time logic lands and load hardware profile from YAML/JSON.
 
 ## Phase 3 — Workload model
 - **Focus:** Task DAGs and baseline workloads.
