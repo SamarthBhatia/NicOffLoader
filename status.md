@@ -16,9 +16,9 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 2 — Minimal simulator core
 - **Focus:** Discrete-event engine and initial system model.
-- **Done:** Added foundational simulator types (`sim_types.hh`), extended the event queue to track typed metadata, implemented the YAML-backed profile loader with schema validation (plus tests), wired the simulator build/test scaffolding, drafted concrete Resource/Task abstractions with a basic event-queue-driven scheduler (plus coverage), and introduced a profile-aware service-time model with deterministic/stochastic sampling (plus integration tests).
-- **Next:** Pull profile-derived resource/service parameters into scheduler setup (rather than hand-built fixtures) and add validation helpers for multi-stage tasks.
-- **Remaining:** Broaden scheduler tests to cover profile-driven workloads, multi-stage flows, and cross-resource contention cases.
+- **Done:** Added foundational simulator types (`sim_types.hh`), extended the event queue to track typed metadata, implemented the YAML-backed profile loader with schema validation (plus tests), wired the simulator build/test scaffolding, drafted concrete Resource/Task abstractions with a basic event-queue-driven scheduler (plus coverage), introduced a profile-aware service-time model with deterministic/stochastic sampling (plus integration tests), and wired profile-derived resource inventories + multi-stage contention scenarios into the scheduler tests.
+- **Next:** Drive scheduler/task setup directly from loaded profile/workload specs (no hand-rolled structs) and codify helpers for composing multi-stage DAGs.
+- **Remaining:** Broaden scheduler tests to cover profile-driven workloads, multi-stage flows, and cross-resource contention cases alongside stochastic sampling checks.
 
 ## Phase 3 — Workload model
 - **Focus:** Task DAGs and baseline workloads.
