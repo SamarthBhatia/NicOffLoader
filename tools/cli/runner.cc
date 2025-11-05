@@ -216,7 +216,7 @@ void print_usage(std::ostream& out) {
         << "  --seed <value>           RNG seed for stochastic service times (default: 1)\n"
         << "  --host-mode <mode>       Host service mode: deterministic|stochastic (default: deterministic)\n"
         << "  --nic-mode <mode>        NIC service mode: deterministic|stochastic (default: deterministic)\n"
-        << "  --policy <id>            Policy hook to register (options: none, descending-id, limit-active-1)\n"
+        << "  --policy <id>            Policy hook to register (options: none, descending-id, limit-active-1, prefer-host, prefer-nic)\n"
         << "  -h, --help               Show this message\n";
 }
 

@@ -1,3 +1,4 @@
+#include "nicloadoff/basic_policy_hooks.hh"
 #include "nicloadoff/policy_hook.hh"
 #include "nicloadoff/profile_resources.hh"
 #include "nicloadoff/scheduler.hh"
@@ -70,34 +71,6 @@ nicloadoff::config::Profile make_profile_with_service() {
                                                                                    .nic_mean_us = 1.5});
     return profile;
 }
-
-class DescendingPriorityPolicy : public nicloadoff::policy::PolicyHook {
-  public:
-    [[nodiscard]] nicloadoff::policy::PolicyDecision evaluate(const nicloadoff::PolicyStateSnapshot& snapshot) override {
-        nicloadoff::policy::PolicyDecision decision{};
-        std::vector<nicloadoff::TaskId> preferred = snapshot.waiting_task_order;
-        std::sort(preferred.begin(), preferred.end(), std::greater<nicloadoff::TaskId>());
-        decision.waiting_order = std::move(preferred);
-        return decision;
-    }
-};
-
-class MaxActivePolicy : public nicloadoff::policy::PolicyHook {
-  public:
-    explicit MaxActivePolicy(std::size_t limit) : limit_(limit) {}
-
-    [[nodiscard]] nicloadoff::policy::PolicyDecision evaluate(const nicloadoff::PolicyStateSnapshot&) override {
-        nicloadoff::policy::PolicyDecision decision{};
-        nicloadoff::policy::AdmissionControlDirective directive{};
-        directive.enabled = true;
-        directive.max_active_tasks = limit_;
-        decision.admission = directive;
-        return decision;
-    }
-
-  private:
-    std::size_t limit_;
-};
 
 } // namespace
 
@@ -287,8 +260,8 @@ int main() {
 
         auto tasks = nicloadoff::make_tasks_from_spec(workload, inventory.ids);
         nicloadoff::BasicScheduler scheduler(std::move(inventory.pool));
-        DescendingPriorityPolicy policy;
-        scheduler.set_policy_hook(&policy);
+        auto policy = nicloadoff::policy::make_policy_hook("descending-id");
+        scheduler.set_policy_hook(policy.get());
         for (const auto& task : tasks) {
             scheduler.submit_task(task);
         }
@@ -319,8 +292,8 @@ int main() {
 
         auto tasks = nicloadoff::make_tasks_from_spec(workload, inventory.ids);
         nicloadoff::BasicScheduler scheduler(std::move(inventory.pool));
-        MaxActivePolicy policy(1);
-        scheduler.set_policy_hook(&policy);
+        auto policy = nicloadoff::policy::make_policy_hook("limit-active-1");
+        scheduler.set_policy_hook(policy.get());
         for (const auto& task : tasks) {
             scheduler.submit_task(task);
         }
@@ -331,6 +304,66 @@ int main() {
         check(completed.size() == 2, "expected two completed tasks with admission control");
         check(completed[0] == 20, "expected task 20 to complete first under throttle");
         check(completed[1] == 21, "expected task 21 to complete second under throttle");
+    }
+
+    {
+        auto profile = make_profile(1.0, 8.0, 128.0, 1.0, 8.0, 128.0);
+        nicloadoff::WorkloadSpec workload{};
+        workload.tasks.push_back(nicloadoff::TaskSpec{
+            .id = 29,
+            .arrival_time = 0.0,
+            .stages = {make_stage(6.0, {{nicloadoff::ResourceClass::kHostCpu, 1.0}})},
+        });
+        workload.tasks.push_back(nicloadoff::TaskSpec{
+            .id = 30,
+            .arrival_time = 1.0,
+            .stages = {make_stage(4.0,
+                                  {{nicloadoff::ResourceClass::kHostCpu, 1.0},
+                                   {nicloadoff::ResourceClass::kNicCpu, 0.1}})},
+        });
+        workload.tasks.push_back(nicloadoff::TaskSpec{
+            .id = 31,
+            .arrival_time = 1.0,
+            .stages = {make_stage(4.0,
+                                  {{nicloadoff::ResourceClass::kHostCpu, 1.0},
+                                   {nicloadoff::ResourceClass::kNicCpu, 0.8}})},
+        });
+
+        {
+            auto inventory = nicloadoff::make_resource_inventory_from_profile(profile);
+            auto tasks = nicloadoff::make_tasks_from_spec(workload, inventory.ids);
+            nicloadoff::BasicScheduler scheduler(std::move(inventory.pool));
+            auto policy = nicloadoff::policy::make_policy_hook("prefer-host");
+            scheduler.set_policy_hook(policy.get());
+            for (const auto& task : tasks) {
+                scheduler.submit_task(task);
+            }
+            scheduler.run_until_empty();
+
+            const auto& completed = scheduler.completed_tasks();
+            check(completed.size() == 3, "expected three completed tasks with host-prefer policy");
+            check(completed[0] == 29, "expected blocker task to finish first");
+            check(completed[1] == 30, "expected host-heavy task to complete second under host preference");
+            check(completed[2] == 31, "expected NIC-heavy task to complete last under host preference");
+        }
+
+        {
+            auto inventory = nicloadoff::make_resource_inventory_from_profile(profile);
+            auto tasks = nicloadoff::make_tasks_from_spec(workload, inventory.ids);
+            nicloadoff::BasicScheduler scheduler(std::move(inventory.pool));
+            auto policy = nicloadoff::policy::make_policy_hook("prefer-nic");
+            scheduler.set_policy_hook(policy.get());
+            for (const auto& task : tasks) {
+                scheduler.submit_task(task);
+            }
+            scheduler.run_until_empty();
+
+            const auto& completed = scheduler.completed_tasks();
+            check(completed.size() == 3, "expected three completed tasks with nic-prefer policy");
+            check(completed[0] == 29, "expected blocker task to finish first");
+            check(completed[1] == 31, "expected NIC-heavy task to complete second under nic preference");
+            check(completed[2] == 30, "expected host-heavy task to complete last under nic preference");
+        }
     }
 
     return 0;

@@ -25,6 +25,9 @@ struct PolicyTaskState {
     bool active{false};
     bool waiting{false};
     bool completed{false};
+    bool has_pending_stage{false};
+    double pending_host_demand{0.0};
+    double pending_nic_demand{0.0};
 };
 
 struct PolicyQueuesState {

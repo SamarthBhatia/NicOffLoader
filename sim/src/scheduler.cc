@@ -408,6 +408,35 @@ PolicyStateSnapshot BasicScheduler::policy_state_snapshot() const {
         task_state.active = status.active;
         task_state.waiting = status.waiting;
         task_state.completed = status.completed;
+
+        auto ctx_it = tasks_.find(status.id);
+        if (ctx_it != tasks_.end()) {
+            const TaskContext& ctx = ctx_it->second;
+            if (status.stage_index < ctx.task.stages.size()) {
+                task_state.has_pending_stage = true;
+                const TaskStage& stage = ctx.task.stages[status.stage_index];
+                for (const TaskRequirement& req : stage.requirements) {
+                    const Resource* resource = resources_.find(req.resource_id);
+                    if (resource == nullptr) {
+                        continue;
+                    }
+                    switch (resource->type()) {
+                    case ResourceType::kHostCpu:
+                    case ResourceType::kHostDram:
+                    case ResourceType::kHostLink:
+                        task_state.pending_host_demand += req.units;
+                        break;
+                    case ResourceType::kNicCpu:
+                    case ResourceType::kNicDram:
+                    case ResourceType::kNicLink:
+                        task_state.pending_nic_demand += req.units;
+                        break;
+                    default:
+                        break;
+                    }
+                }
+            }
+        }
         snapshot.tasks.push_back(task_state);
     }
 

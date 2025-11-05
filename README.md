@@ -79,6 +79,19 @@ ctest --test-dir build
 
 The initial smoke test exercises the placeholder event queue implementation; expand the suite as simulator modules arrive.
 
+### Run a CLI simulation
+Once you have a profile and workload YAML ready, invoke the single-run CLI and optionally select a built-in policy hook:
+
+```bash
+./build/tools/cli/nicloadoff_cli \
+  --profile profiles/bf2_default.yaml \
+  --workload workloads/examples/sequential_host.yaml \
+  --policy prefer-nic \
+  --output run.json
+```
+
+Available policy identifiers match the TUI presets: `none`, `descending-id`, `limit-active-1`, `prefer-host`, and `prefer-nic`.
+
 ### Launch the ncurses TUI
 The interactive TUI lets you inspect profiles, step through workloads, and experiment with policy hooks without leaving the terminal.
 
