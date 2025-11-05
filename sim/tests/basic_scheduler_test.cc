@@ -1,8 +1,10 @@
+#include "nicloadoff/policy_hook.hh"
 #include "nicloadoff/profile_resources.hh"
 #include "nicloadoff/scheduler.hh"
 #include "nicloadoff/service_time_model.hh"
 #include "nicloadoff/workload.hh"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -68,6 +70,18 @@ nicloadoff::config::Profile make_profile_with_service() {
                                                                                    .nic_mean_us = 1.5});
     return profile;
 }
+
+class DescendingPriorityPolicy : public nicloadoff::policy::PolicyHook {
+  public:
+    [[nodiscard]] nicloadoff::policy::PolicyDecision evaluate(const nicloadoff::PolicyStateSnapshot& snapshot) override {
+        std::vector<nicloadoff::TaskId> preferred = snapshot.waiting_task_order;
+        std::sort(preferred.begin(), preferred.end(), std::greater<nicloadoff::TaskId>());
+        nicloadoff::policy::PolicyDecision decision{};
+        decision.type = nicloadoff::policy::DirectiveType::kReorderWaitingQueue;
+        decision.preferred_waiting_order = std::move(preferred);
+        return decision;
+    }
+};
 
 } // namespace
 
@@ -232,6 +246,43 @@ int main() {
         const auto* nic_cpu = scheduler.resource_pool().find(inventory.ids.nic_cpu);
         check(nic_cpu != nullptr, "expected NIC CPU resource to be present after profile setup");
         assert_near(nic_cpu->in_use(), 0.0);
+    }
+
+    {
+        auto profile = make_profile(1.0, 8.0, 128.0);
+        auto inventory = nicloadoff::make_resource_inventory_from_profile(profile);
+
+        nicloadoff::WorkloadSpec workload{};
+        workload.tasks.push_back(nicloadoff::TaskSpec{
+            .id = 10,
+            .arrival_time = 0.0,
+            .stages = {make_stage(5.0, {{nicloadoff::ResourceClass::kHostCpu, 1.0}})},
+        });
+        workload.tasks.push_back(nicloadoff::TaskSpec{
+            .id = 11,
+            .arrival_time = 0.1,
+            .stages = {make_stage(5.0, {{nicloadoff::ResourceClass::kHostCpu, 1.0}})},
+        });
+        workload.tasks.push_back(nicloadoff::TaskSpec{
+            .id = 12,
+            .arrival_time = 0.2,
+            .stages = {make_stage(5.0, {{nicloadoff::ResourceClass::kHostCpu, 1.0}})},
+        });
+
+        auto tasks = nicloadoff::make_tasks_from_spec(workload, inventory.ids);
+        nicloadoff::BasicScheduler scheduler(std::move(inventory.pool));
+        DescendingPriorityPolicy policy;
+        scheduler.set_policy_hook(&policy);
+        for (const auto& task : tasks) {
+            scheduler.submit_task(task);
+        }
+        scheduler.run_until_empty();
+
+        const auto& completed = scheduler.completed_tasks();
+        check(completed.size() == 3, "expected three completed tasks with policy hook");
+        check(completed[0] == 10, "expected first completion to remain task 10");
+        check(completed[1] == 12, "expected policy to prioritise higher task id");
+        check(completed[2] == 11, "expected lowest priority task to run last");
     }
 
     return 0;

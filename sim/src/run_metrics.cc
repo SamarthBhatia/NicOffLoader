@@ -1,4 +1,5 @@
 #include "nicloadoff/run_metrics.hh"
+#include "nicloadoff/scheduler.hh"
 
 #include <algorithm>
 #include <cmath>

@@ -2,11 +2,12 @@
 #define NICLOADOFF_SCHEDULER_HH
 
 #include "nicloadoff/event_queue.hh"
+#include "nicloadoff/policy_hook.hh"
 #include "nicloadoff/resource.hh"
 #include "nicloadoff/task.hh"
 
+#include <deque>
 #include <optional>
-#include <queue>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -50,6 +51,7 @@ class BasicScheduler {
     bool step_once();
 
     [[nodiscard]] SimTime current_time() const noexcept { return current_time_; }
+    void set_policy_hook(policy::PolicyHook* hook) noexcept { policy_hook_ = hook; }
     [[nodiscard]] const std::vector<TaskId>& completed_tasks() const noexcept { return completed_tasks_; }
     [[nodiscard]] const ResourcePool& resource_pool() const noexcept { return resources_; }
     [[nodiscard]] std::optional<ScheduledEvent> last_event() const noexcept { return last_event_; }
@@ -87,9 +89,10 @@ class BasicScheduler {
     EventQueue queue_;
     ResourcePool resources_;
     ServiceTimeModel* service_model_{nullptr};
+    policy::PolicyHook* policy_hook_{nullptr};
     SimTime current_time_{0.0};
     std::unordered_map<TaskId, TaskContext> tasks_;
-    std::queue<TaskId> waiting_queue_;
+    std::deque<TaskId> waiting_queue_;
     std::unordered_set<TaskId> waiting_set_;
     std::vector<TaskId> completed_tasks_;
     std::optional<ScheduledEvent> last_event_;
@@ -107,6 +110,8 @@ class BasicScheduler {
     TaskContext& get_task(TaskId id);
     Duration resolve_service_time(const TaskStage& stage, TaskId id);
     void finalize_task_metrics(const TaskContext& ctx);
+    void evaluate_policy_hook();
+    void apply_waiting_reorder(const std::vector<TaskId>& preferred_order);
 };
 
 } // namespace nicloadoff

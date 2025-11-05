@@ -2,7 +2,7 @@
 #define NICLOADOFF_POLICY_STATE_HH
 
 #include "nicloadoff/resource.hh"
-#include "nicloadoff/run_metrics.hh"
+#include "nicloadoff/run_metrics_types.hh"
 #include "nicloadoff/sim_types.hh"
 
 #include <cstddef>
@@ -38,6 +38,7 @@ struct PolicyStateSnapshot {
     RunMetrics run_metrics{};
     std::vector<PolicyResourceState> resources;
     std::vector<PolicyTaskState> tasks;
+    std::vector<TaskId> waiting_task_order;
 };
 
 } // namespace nicloadoff

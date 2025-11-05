@@ -96,7 +96,8 @@ void BasicScheduler::handle_task_ready(TaskId id, SimTime timestamp) {
     bool started = try_start_task(ctx, timestamp);
     if (!started && waiting_set_.count(id) == 0) {
         waiting_set_.insert(id);
-        waiting_queue_.push(id);
+        waiting_queue_.push_back(id);
+        evaluate_policy_hook();
     }
 }
 
@@ -229,15 +230,24 @@ void BasicScheduler::validate_task(const Task& task) const {
 }
 
 void BasicScheduler::drain_waiting(SimTime timestamp) {
-    std::size_t pending = waiting_queue_.size();
-    for (std::size_t i = 0; i < pending; ++i) {
-        TaskId id = waiting_queue_.front();
-        waiting_queue_.pop();
-        auto& ctx = get_task(id);
-        if (try_start_task(ctx, timestamp)) {
-            continue;
+    if (waiting_queue_.empty()) {
+        return;
+    }
+
+    std::size_t processed = 0;
+    const std::size_t max_iterations = waiting_queue_.size();
+    while (!waiting_queue_.empty() && processed < max_iterations) {
+        evaluate_policy_hook();
+        if (waiting_queue_.empty()) {
+            break;
         }
-        waiting_queue_.push(id);
+        TaskId id = waiting_queue_.front();
+        waiting_queue_.pop_front();
+        auto& ctx = get_task(id);
+        if (!try_start_task(ctx, timestamp)) {
+            waiting_queue_.push_back(id);
+        }
+        ++processed;
     }
 }
 
@@ -287,13 +297,7 @@ void BasicScheduler::finalize_task_metrics(const TaskContext& ctx) {
 std::optional<ScheduledEvent> BasicScheduler::next_event() const { return queue_.peek(); }
 
 std::vector<TaskId> BasicScheduler::waiting_tasks() const {
-    std::vector<TaskId> tasks;
-    std::queue<TaskId> copy = waiting_queue_;
-    while (!copy.empty()) {
-        tasks.push_back(copy.front());
-        copy.pop();
-    }
-    return tasks;
+    return std::vector<TaskId>(waiting_queue_.begin(), waiting_queue_.end());
 }
 
 std::vector<BasicScheduler::TaskStatus> BasicScheduler::task_statuses() const {
@@ -317,6 +321,40 @@ std::vector<BasicScheduler::TaskStatus> BasicScheduler::task_statuses() const {
 
 RunMetrics BasicScheduler::aggregated_metrics() const { return compute_run_metrics(*this); }
 
+void BasicScheduler::evaluate_policy_hook() {
+    if (policy_hook_ == nullptr) {
+        return;
+    }
+    const PolicyStateSnapshot snapshot = policy_state_snapshot();
+    const policy::PolicyDecision decision = policy_hook_->evaluate(snapshot);
+    if (decision.type == policy::DirectiveType::kReorderWaitingQueue) {
+        apply_waiting_reorder(decision.preferred_waiting_order);
+    }
+}
+
+void BasicScheduler::apply_waiting_reorder(const std::vector<TaskId>& preferred_order) {
+    if (waiting_queue_.empty()) {
+        return;
+    }
+
+    std::unordered_set<TaskId> inserted;
+    std::deque<TaskId> reordered;
+    for (TaskId desired : preferred_order) {
+        if (waiting_set_.count(desired) == 0) {
+            continue;
+        }
+        if (inserted.insert(desired).second) {
+            reordered.push_back(desired);
+        }
+    }
+    for (TaskId existing : waiting_queue_) {
+        if (inserted.insert(existing).second) {
+            reordered.push_back(existing);
+        }
+    }
+    waiting_queue_ = std::move(reordered);
+}
+
 PolicyStateSnapshot BasicScheduler::policy_state_snapshot() const {
     PolicyStateSnapshot snapshot{};
     snapshot.current_time = current_time_;
@@ -335,6 +373,8 @@ PolicyStateSnapshot BasicScheduler::policy_state_snapshot() const {
         resource_state.in_use = resource.in_use();
         snapshot.resources.push_back(resource_state);
     }
+
+    snapshot.waiting_task_order = waiting_tasks();
 
     const std::vector<TaskStatus> statuses = task_statuses();
     snapshot.tasks.reserve(statuses.size());
