@@ -1,0 +1,27 @@
+schema_version: 0.1
+workload_name: skew_dag
+description: >
+  Minimal DAG workload with an explicit host entry node and NIC-heavy successor stage.
+tasks:
+  - id: 501
+    arrival_time: 0.0
+    dag:
+      nodes:
+        - name: host_entry
+          stage:
+            deterministic_service_time: 10.0
+            demands:
+              - resource: host_cpu
+                units: 1.0
+          successors:
+            - nic_stage
+        - name: nic_stage
+          stage:
+            deterministic_service_time: 1.0
+            demands:
+              - resource: host_cpu
+                units: 0.1
+              - resource: nic_cpu
+                units: 1.5
+      entry:
+        - host_entry

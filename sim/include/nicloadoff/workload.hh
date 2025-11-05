@@ -37,8 +37,22 @@ struct TaskSpec {
     std::vector<StageSpec> stages;
 };
 
+struct StageNodeSpec {
+    std::string name;
+    StageSpec stage;
+    std::vector<std::string> successors;
+};
+
+struct TaskDAGSpec {
+    TaskId id{};
+    SimTime arrival_time{0.0};
+    std::vector<StageNodeSpec> nodes;
+    std::vector<std::string> entry_points;
+};
+
 struct WorkloadSpec {
     std::vector<TaskSpec> tasks;
+    std::vector<TaskDAGSpec> dag_tasks;
 };
 
 class WorkloadSpecError : public std::runtime_error {

@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -466,7 +467,23 @@ StageSpec parse_stage(const YamlNode& node, const std::string& context) {
     return stage;
 }
 
-TaskSpec parse_task(const YamlNode& node, const std::string& context) {
+StageNodeSpec parse_stage_node(const YamlNode& node, const std::string& context) {
+    const auto& map = expect_map(node, context);
+    StageNodeSpec spec;
+    spec.name = parse_string(get_required(map, "name", context), context + ".name");
+    const auto& stage_node = get_required(map, "stage", context);
+    spec.stage = parse_stage(stage_node, context + ".stage");
+    if (auto successors_node = get_optional(map, "successors")) {
+        const auto& seq = expect_sequence(*successors_node, context + ".successors");
+        for (std::size_t i = 0; i < seq.sequence.size(); ++i) {
+            spec.successors.push_back(
+                parse_string(seq.sequence[i], context + ".successors[" + std::to_string(i) + "]"));
+        }
+    }
+    return spec;
+}
+
+TaskSpec parse_linear_task(const YamlNode& node, const std::string& context) {
     const auto& map = expect_map(node, context);
     TaskSpec task;
     task.id = parse_uint64(parse_string(get_required(map, "id", context), context + ".id"), context + ".id");
@@ -481,6 +498,79 @@ TaskSpec parse_task(const YamlNode& node, const std::string& context) {
     if (task.stages.empty()) {
         throw WorkloadLoaderError(make_error("task must contain at least one stage", context));
     }
+    return task;
+}
+
+TaskDAGSpec parse_task_dag(const YamlNode& node, const std::string& context) {
+    const auto& map = expect_map(node, context);
+    TaskDAGSpec task;
+    task.id = parse_uint64(parse_string(get_required(map, "id", context), context + ".id"), context + ".id");
+    task.arrival_time =
+        parse_double(parse_string(get_required(map, "arrival_time", context), context + ".arrival_time"),
+                     context + ".arrival_time");
+
+    const auto& dag_node = expect_map(get_required(map, "dag", context), context + ".dag");
+    const auto& nodes_node = expect_sequence(get_required(dag_node, "nodes", context + ".dag"),
+                                             context + ".dag.nodes");
+
+    std::unordered_set<std::string> seen_nodes;
+    task.nodes.reserve(nodes_node.sequence.size());
+    for (std::size_t i = 0; i < nodes_node.sequence.size(); ++i) {
+        const std::string node_context = context + ".dag.nodes[" + std::to_string(i) + "]";
+        StageNodeSpec node_spec = parse_stage_node(nodes_node.sequence[i], node_context);
+        if (!seen_nodes.insert(node_spec.name).second) {
+            throw WorkloadLoaderError(make_error(node_context, "duplicate node name '" + node_spec.name + "'"));
+        }
+        task.nodes.push_back(std::move(node_spec));
+    }
+    if (task.nodes.empty()) {
+        throw WorkloadLoaderError(make_error(context + ".dag", "nodes list cannot be empty"));
+    }
+
+    std::vector<std::string> explicit_entries;
+    if (auto entry_node = get_optional(dag_node, "entry")) {
+        const auto& seq = expect_sequence(*entry_node, context + ".dag.entry");
+        explicit_entries.reserve(seq.sequence.size());
+        for (std::size_t i = 0; i < seq.sequence.size(); ++i) {
+            explicit_entries.push_back(
+                parse_string(seq.sequence[i], context + ".dag.entry[" + std::to_string(i) + "]"));
+        }
+    }
+
+    // Validate successors reference known nodes
+    for (const auto& stage_node : task.nodes) {
+        for (const auto& succ : stage_node.successors) {
+            if (!seen_nodes.count(succ)) {
+                throw WorkloadLoaderError(make_error(context + ".dag",
+                                                     "node '" + stage_node.name + "' references unknown successor '" +
+                                                         succ + "'"));
+            }
+        }
+    }
+
+    if (!explicit_entries.empty()) {
+        for (const auto& entry : explicit_entries) {
+            if (!seen_nodes.count(entry)) {
+                throw WorkloadLoaderError(make_error(context + ".dag.entry",
+                                                     "entry node '" + entry + "' not found in dag nodes"));
+            }
+        }
+        task.entry_points = std::move(explicit_entries);
+    } else {
+        std::unordered_set<std::string> candidates = seen_nodes;
+        for (const auto& stage_node : task.nodes) {
+            for (const auto& succ : stage_node.successors) {
+                candidates.erase(succ);
+            }
+        }
+        if (candidates.empty()) {
+            throw WorkloadLoaderError(make_error(context + ".dag",
+                                                 "unable to infer entry nodes; graph may contain a cycle"));
+        }
+        task.entry_points.assign(candidates.begin(), candidates.end());
+        std::sort(task.entry_points.begin(), task.entry_points.end());
+    }
+
     return task;
 }
 
@@ -504,10 +594,21 @@ LoadedWorkload load_workload_from_file(const std::filesystem::path& path) {
 
     const auto& tasks_node = expect_sequence(get_required(root, "tasks", "root"), "root.tasks");
     for (std::size_t i = 0; i < tasks_node.sequence.size(); ++i) {
-        workload.spec.tasks.push_back(parse_task(tasks_node.sequence[i],
-                                                 "root.tasks[" + std::to_string(i) + "]"));
+        const std::string task_context = "root.tasks[" + std::to_string(i) + "]";
+        const auto& candidate = expect_map(tasks_node.sequence[i], task_context);
+        const bool has_stages = candidate.map.count("stages") != 0;
+        const bool has_dag = candidate.map.count("dag") != 0;
+        if (has_stages && has_dag) {
+            throw WorkloadLoaderError(make_error(task_context,
+                                                "task cannot specify both 'stages' and 'dag'; choose one"));
+        }
+        if (has_dag) {
+            workload.spec.dag_tasks.push_back(parse_task_dag(tasks_node.sequence[i], task_context));
+        } else {
+            workload.spec.tasks.push_back(parse_linear_task(tasks_node.sequence[i], task_context));
+        }
     }
-    if (workload.spec.tasks.empty()) {
+    if (workload.spec.tasks.empty() && workload.spec.dag_tasks.empty()) {
         throw WorkloadLoaderError(make_error("workload must contain at least one task", "root.tasks"));
     }
     return workload;
