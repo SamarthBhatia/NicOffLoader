@@ -78,5 +78,12 @@ int main() {
     std::error_code ec;
     std::filesystem::remove(options.output_path, ec);
 
+    options.output_path = make_output_path();
+    options.policy_id = "descending-id";
+    const RunSummary policy_summary = run_simulation(options);
+    check(policy_summary.completed_tasks == summary.completed_tasks,
+          "policy-enabled run should complete same number of tasks");
+    std::filesystem::remove(options.output_path, ec);
+
     return 0;
 }

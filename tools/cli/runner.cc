@@ -1,5 +1,6 @@
 #include "runner.hh"
 
+#include "nicloadoff/basic_policy_hooks.hh"
 #include "nicloadoff/profile.hh"
 #include "nicloadoff/profile_resources.hh"
 #include "nicloadoff/scheduler.hh"
@@ -10,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <sstream>
@@ -214,6 +216,7 @@ void print_usage(std::ostream& out) {
         << "  --seed <value>           RNG seed for stochastic service times (default: 1)\n"
         << "  --host-mode <mode>       Host service mode: deterministic|stochastic (default: deterministic)\n"
         << "  --nic-mode <mode>        NIC service mode: deterministic|stochastic (default: deterministic)\n"
+        << "  --policy <id>            Policy hook to register (options: none, descending-id, limit-active-1)\n"
         << "  -h, --help               Show this message\n";
 }
 
@@ -277,6 +280,17 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
                 return false;
             }
             options.nic_mode = *mode;
+        } else if (arg == "--policy") {
+            if (i + 1 >= argc) {
+                error = "--policy requires a value";
+                return false;
+            }
+            std::string value = argv[++i];
+            if (!policy::is_policy_supported(value)) {
+                error = "unknown policy: " + value;
+                return false;
+            }
+            options.policy_id = std::move(value);
         } else {
             error = "unrecognised argument: " + arg;
             return false;
@@ -303,6 +317,11 @@ RunSummary run_simulation(const CliOptions& options) {
     auto inventory = make_resource_inventory_from_profile(profile);
     const auto tasks = make_tasks_from_spec(workload, inventory.ids);
     BasicScheduler scheduler(std::move(inventory.pool), &service_model);
+
+    std::unique_ptr<policy::PolicyHook> policy_hook = policy::make_policy_hook(options.policy_id);
+    if (policy_hook) {
+        scheduler.set_policy_hook(policy_hook.get());
+    }
 
     for (const auto& task : tasks) {
         scheduler.submit_task(task);

@@ -93,6 +93,7 @@ void BasicScheduler::handle_task_ready(TaskId id, SimTime timestamp) {
             runtime.ready_time = timestamp;
         }
     }
+    evaluate_policy_hook();
     bool started = try_start_task(ctx, timestamp);
     if (!started && waiting_set_.count(id) == 0) {
         waiting_set_.insert(id);
@@ -121,6 +122,9 @@ void BasicScheduler::handle_task_complete(TaskId id, SimTime timestamp) {
         resources_.release(requirement.resource_id, requirement.units);
     }
 
+    if (ctx.active && active_task_count_ > 0) {
+        --active_task_count_;
+    }
     ctx.active = false;
     ctx.active_service_time = 0.0;
     if (ctx.stage_index < ctx.stage_runtimes.size()) {
@@ -157,6 +161,10 @@ bool BasicScheduler::try_start_task(TaskContext& ctx, SimTime timestamp) {
         return true;
     }
 
+    if (admission_limit_.has_value() && active_task_count_ >= *admission_limit_) {
+        return false;
+    }
+
     const TaskStage& stage = ctx.task.stages[ctx.stage_index];
 
     for (const auto& requirement : stage.requirements) {
@@ -172,6 +180,7 @@ bool BasicScheduler::try_start_task(TaskContext& ctx, SimTime timestamp) {
     Duration duration = resolve_service_time(stage, ctx.task.id);
 
     ctx.active = true;
+    ++active_task_count_;
     ctx.active_service_time = duration;
     if (ctx.stage_index < ctx.stage_runtimes.size()) {
         auto& runtime = ctx.stage_runtimes[ctx.stage_index];
@@ -327,8 +336,11 @@ void BasicScheduler::evaluate_policy_hook() {
     }
     const PolicyStateSnapshot snapshot = policy_state_snapshot();
     const policy::PolicyDecision decision = policy_hook_->evaluate(snapshot);
-    if (decision.type == policy::DirectiveType::kReorderWaitingQueue) {
-        apply_waiting_reorder(decision.preferred_waiting_order);
+    if (decision.waiting_order) {
+        apply_waiting_reorder(*decision.waiting_order);
+    }
+    if (decision.admission) {
+        apply_admission_control(*decision.admission);
     }
 }
 
@@ -355,6 +367,14 @@ void BasicScheduler::apply_waiting_reorder(const std::vector<TaskId>& preferred_
     waiting_queue_ = std::move(reordered);
 }
 
+void BasicScheduler::apply_admission_control(const policy::AdmissionControlDirective& directive) {
+    if (!directive.enabled) {
+        admission_limit_.reset();
+        return;
+    }
+    admission_limit_ = directive.max_active_tasks;
+}
+
 PolicyStateSnapshot BasicScheduler::policy_state_snapshot() const {
     PolicyStateSnapshot snapshot{};
     snapshot.current_time = current_time_;
@@ -375,6 +395,8 @@ PolicyStateSnapshot BasicScheduler::policy_state_snapshot() const {
     }
 
     snapshot.waiting_task_order = waiting_tasks();
+    snapshot.active_task_count = active_task_count_;
+    snapshot.admission_limit = admission_limit_;
 
     const std::vector<TaskStatus> statuses = task_statuses();
     snapshot.tasks.reserve(statuses.size());

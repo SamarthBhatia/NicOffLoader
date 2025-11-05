@@ -3,18 +3,19 @@
 
 #include "nicloadoff/policy_state.hh"
 
+#include <optional>
 #include <vector>
 
 namespace nicloadoff::policy {
 
-enum class DirectiveType {
-    kNoOp,
-    kReorderWaitingQueue
+struct AdmissionControlDirective {
+    bool enabled{false};
+    std::size_t max_active_tasks{0};
 };
 
 struct PolicyDecision {
-    DirectiveType type{DirectiveType::kNoOp};
-    std::vector<TaskId> preferred_waiting_order;
+    std::optional<std::vector<TaskId>> waiting_order;
+    std::optional<AdmissionControlDirective> admission;
 };
 
 class PolicyHook {

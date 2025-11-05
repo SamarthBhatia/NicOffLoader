@@ -1,7 +1,9 @@
+#include "nicloadoff/basic_policy_hooks.hh"
 #include "nicloadoff/profile.hh"
 #include "nicloadoff/profile_resources.hh"
-#include "nicloadoff/scheduler.hh"
+#include "nicloadoff/policy_hook.hh"
 #include "nicloadoff/run_metrics.hh"
+#include "nicloadoff/scheduler.hh"
 #include "nicloadoff/service_time_model.hh"
 #include "nicloadoff/workload.hh"
 #include "nicloadoff/workload_loader.hh"
@@ -290,13 +292,21 @@ struct SimulationSnapshot {
     Duration total_service_time{0.0};
     Duration host_service_time{0.0};
     Duration nic_service_time{0.0};
+    std::size_t active_task_count{0};
+    std::optional<std::size_t> admission_limit;
     bool finished{false};
 };
 
 class SimulationSession {
   public:
-    SimulationSession(config::Profile profile, WorkloadSpec workload, std::uint64_t seed)
-        : profile_(std::move(profile)), workload_(std::move(workload)), seed_(seed) {
+    SimulationSession(config::Profile profile,
+                      WorkloadSpec workload,
+                      std::uint64_t seed,
+                      std::unique_ptr<policy::PolicyHook> policy = nullptr)
+        : profile_(std::move(profile)),
+          workload_(std::move(workload)),
+          policy_hook_(std::move(policy)),
+          seed_(seed) {
         reset(seed_);
     }
 
@@ -307,6 +317,9 @@ class SimulationSession {
         resource_ids_ = inventory.ids;
         auto tasks = make_tasks_from_spec(workload_, resource_ids_);
         scheduler_ = std::make_unique<BasicScheduler>(std::move(inventory.pool), service_model_.get());
+        if (policy_hook_) {
+            scheduler_->set_policy_hook(policy_hook_.get());
+        }
         for (const auto& task : tasks) {
             scheduler_->submit_task(task);
         }
@@ -334,22 +347,24 @@ class SimulationSession {
     [[nodiscard]] SimulationSnapshot snapshot() const {
         SimulationSnapshot snapshot{};
         if (scheduler_) {
-            snapshot.current_time = scheduler_->current_time();
+            const PolicyStateSnapshot policy_snapshot = scheduler_->policy_state_snapshot();
+            snapshot.current_time = policy_snapshot.current_time;
             snapshot.last_event = scheduler_->last_event();
             snapshot.next_event = scheduler_->next_event();
-            snapshot.event_queue_size = scheduler_->event_queue_size();
-            snapshot.waiting_queue_size = scheduler_->waiting_queue_size();
-            snapshot.waiting_tasks = scheduler_->waiting_tasks();
+            snapshot.event_queue_size = policy_snapshot.queues.event_queue_depth;
+            snapshot.waiting_queue_size = policy_snapshot.queues.waiting_queue_depth;
+            snapshot.events_processed = policy_snapshot.queues.processed_events;
+            snapshot.waiting_tasks = policy_snapshot.waiting_task_order;
             snapshot.task_statuses = scheduler_->task_statuses();
             snapshot.completed_tasks = scheduler_->completed_tasks();
-            snapshot.events_processed = scheduler_->events_processed();
             snapshot.resources = scheduler_->resource_pool().snapshot();
-            for (const auto& metrics : scheduler_->completed_metrics()) {
-                snapshot.total_queue_time += metrics.total_queue_time;
-                snapshot.total_service_time += metrics.total_service_time;
-                snapshot.host_service_time += metrics.host_service_time;
-                snapshot.nic_service_time += metrics.nic_service_time;
-            }
+            const auto& aggregate = policy_snapshot.run_metrics.aggregate;
+            snapshot.total_queue_time = aggregate.total_queue_time;
+            snapshot.total_service_time = aggregate.total_service_time;
+            snapshot.host_service_time = aggregate.host_service_time;
+            snapshot.nic_service_time = aggregate.nic_service_time;
+            snapshot.active_task_count = policy_snapshot.active_task_count;
+            snapshot.admission_limit = policy_snapshot.admission_limit;
             snapshot.finished = finished_;
         } else {
             snapshot.finished = true;
@@ -374,6 +389,7 @@ class SimulationSession {
     ProfileResourceIds resource_ids_{};
     std::unique_ptr<ServiceTimeModel> service_model_;
     std::unique_ptr<BasicScheduler> scheduler_;
+    std::unique_ptr<policy::PolicyHook> policy_hook_;
     std::vector<std::string> event_log_;
     std::size_t max_event_log_{64};
     std::uint64_t seed_{1};
@@ -385,10 +401,12 @@ struct AppState {
     std::vector<std::string> profile_names;
     std::vector<WorkloadPreset> workloads;
     std::vector<std::string> workload_names;
+    std::vector<policy::BuiltinPolicyInfo> policy_entries;
     std::vector<std::string> load_errors;
 
     int profile_index{0};
     int workload_index{0};
+    int policy_index{0};
 
     bool auto_run{false};
     std::uint64_t next_seed{1};
@@ -442,15 +460,26 @@ struct AppState {
         WorkloadSpec spec = apply_service_modes(preset.spec);
         std::uint64_t seed_to_use = session && preserve_seed ? session->seed() : next_seed;
 
+        std::string policy_id = "none";
+        if (!policy_entries.empty()) {
+            policy_index = std::clamp(policy_index, 0, static_cast<int>(policy_entries.size()) - 1);
+            policy_id = policy_entries[policy_index].id;
+        }
+        auto policy_hook = policy::make_policy_hook(policy_id);
+
         try {
-            session = std::make_unique<SimulationSession>(profile, std::move(spec), seed_to_use);
+            session = std::make_unique<SimulationSession>(profile, std::move(spec), seed_to_use, std::move(policy_hook));
         } catch (const std::exception& ex) {
             status_message = std::string("Failed to initialise simulation: ") + ex.what();
             session.reset();
             return false;
         }
 
-        status_message = "Loaded profile and workload. Press space to run or 'n' to step.";
+        std::string policy_label = "none";
+        if (!policy_entries.empty()) {
+            policy_label = policy_entries[policy_index].display_name;
+        }
+        status_message = "Loaded profile and workload (policy: " + policy_label + "). Press space to run or 'n' to step.";
         if (!load_errors.empty()) {
             status_message += " (" + std::to_string(load_errors.size()) + " loader warning";
             if (load_errors.size() > 1) {
@@ -668,6 +697,7 @@ void draw_instructions(WINDOW* win, int start_row) {
         "  r     Reset (new seed)",
         "  H     Toggle host service mode",
         "  N     Toggle NIC service mode",
+        "  p     Cycle policy hook",
         "  s     Save metrics to JSON",
         "  q     Quit",
     };
@@ -744,6 +774,16 @@ void draw_right_panel(WINDOW* win, const AppState& state, const SimulationSnapsh
                (state.host_stochastic ? "stochastic" : "deterministic"));
     print_line(std::string("  NIC service mode: ") +
                (state.nic_stochastic ? "stochastic" : "deterministic"));
+    std::string policy_label = state.policy_entries.empty()
+                                   ? std::string("None")
+                                   : state.policy_entries[state.policy_index].display_name;
+    print_line("  Policy: " + policy_label);
+    if (snapshot.admission_limit) {
+        print_line("    Active tasks: " + std::to_string(snapshot.active_task_count) + " / " +
+                   std::to_string(*snapshot.admission_limit));
+    } else {
+        print_line("    Active tasks: " + std::to_string(snapshot.active_task_count));
+    }
     print_line("  Total queue time: " + format_double(snapshot.total_queue_time, 3) + " us");
     print_line("  Total service time: " + format_double(snapshot.total_service_time, 3) + " us");
     print_line("    Host service: " + format_double(snapshot.host_service_time, 3) + " us");
@@ -832,6 +872,7 @@ int main() {
     using namespace std::chrono;
 
     AppState state;
+    state.policy_entries = nicloadoff::policy::builtin_policies();
     state.profile_paths = discover_profiles("profiles");
     state.workloads = build_presets();
 
@@ -957,6 +998,18 @@ int main() {
                     state.status_message = std::string("NIC service mode will be ") +
                                             (state.nic_stochastic ? "stochastic" : "deterministic") +
                                             " on next load.";
+                }
+                break;
+            case 'p':
+            case 'P':
+                if (!state.policy_entries.empty()) {
+                    state.policy_index = (state.policy_index + 1) % static_cast<int>(state.policy_entries.size());
+                    if (state.load_selection(true)) {
+                        state.status_message = "Policy set to " +
+                                                state.policy_entries[state.policy_index].display_name + ".";
+                    }
+                } else {
+                    state.status_message = "No policies registered.";
                 }
                 break;
             case 'r':

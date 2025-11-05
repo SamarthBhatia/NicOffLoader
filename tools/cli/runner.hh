@@ -18,6 +18,7 @@ struct CliOptions {
     std::uint64_t seed{1};
     ServiceTimeMode host_mode{ServiceTimeMode::kDeterministic};
     ServiceTimeMode nic_mode{ServiceTimeMode::kDeterministic};
+    std::string policy_id{"none"};
     bool show_help{false};
 };
 

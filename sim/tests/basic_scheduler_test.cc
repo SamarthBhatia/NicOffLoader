@@ -74,13 +74,29 @@ nicloadoff::config::Profile make_profile_with_service() {
 class DescendingPriorityPolicy : public nicloadoff::policy::PolicyHook {
   public:
     [[nodiscard]] nicloadoff::policy::PolicyDecision evaluate(const nicloadoff::PolicyStateSnapshot& snapshot) override {
+        nicloadoff::policy::PolicyDecision decision{};
         std::vector<nicloadoff::TaskId> preferred = snapshot.waiting_task_order;
         std::sort(preferred.begin(), preferred.end(), std::greater<nicloadoff::TaskId>());
-        nicloadoff::policy::PolicyDecision decision{};
-        decision.type = nicloadoff::policy::DirectiveType::kReorderWaitingQueue;
-        decision.preferred_waiting_order = std::move(preferred);
+        decision.waiting_order = std::move(preferred);
         return decision;
     }
+};
+
+class MaxActivePolicy : public nicloadoff::policy::PolicyHook {
+  public:
+    explicit MaxActivePolicy(std::size_t limit) : limit_(limit) {}
+
+    [[nodiscard]] nicloadoff::policy::PolicyDecision evaluate(const nicloadoff::PolicyStateSnapshot&) override {
+        nicloadoff::policy::PolicyDecision decision{};
+        nicloadoff::policy::AdmissionControlDirective directive{};
+        directive.enabled = true;
+        directive.max_active_tasks = limit_;
+        decision.admission = directive;
+        return decision;
+    }
+
+  private:
+    std::size_t limit_;
 };
 
 } // namespace
@@ -283,6 +299,38 @@ int main() {
         check(completed[0] == 10, "expected first completion to remain task 10");
         check(completed[1] == 12, "expected policy to prioritise higher task id");
         check(completed[2] == 11, "expected lowest priority task to run last");
+    }
+
+    {
+        auto profile = make_profile(2.0, 8.0, 128.0);
+        auto inventory = nicloadoff::make_resource_inventory_from_profile(profile);
+
+        nicloadoff::WorkloadSpec workload{};
+        workload.tasks.push_back(nicloadoff::TaskSpec{
+            .id = 20,
+            .arrival_time = 0.0,
+            .stages = {make_stage(4.0, {{nicloadoff::ResourceClass::kHostCpu, 1.0}})},
+        });
+        workload.tasks.push_back(nicloadoff::TaskSpec{
+            .id = 21,
+            .arrival_time = 0.0,
+            .stages = {make_stage(6.0, {{nicloadoff::ResourceClass::kHostCpu, 1.0}})},
+        });
+
+        auto tasks = nicloadoff::make_tasks_from_spec(workload, inventory.ids);
+        nicloadoff::BasicScheduler scheduler(std::move(inventory.pool));
+        MaxActivePolicy policy(1);
+        scheduler.set_policy_hook(&policy);
+        for (const auto& task : tasks) {
+            scheduler.submit_task(task);
+        }
+        scheduler.run_until_empty();
+
+        assert_near(scheduler.current_time(), 10.0);
+        const auto& completed = scheduler.completed_tasks();
+        check(completed.size() == 2, "expected two completed tasks with admission control");
+        check(completed[0] == 20, "expected task 20 to complete first under throttle");
+        check(completed[1] == 21, "expected task 21 to complete second under throttle");
     }
 
     return 0;

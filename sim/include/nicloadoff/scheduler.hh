@@ -90,6 +90,8 @@ class BasicScheduler {
     ResourcePool resources_;
     ServiceTimeModel* service_model_{nullptr};
     policy::PolicyHook* policy_hook_{nullptr};
+    std::size_t active_task_count_{0};
+    std::optional<std::size_t> admission_limit_;
     SimTime current_time_{0.0};
     std::unordered_map<TaskId, TaskContext> tasks_;
     std::deque<TaskId> waiting_queue_;
@@ -112,6 +114,7 @@ class BasicScheduler {
     void finalize_task_metrics(const TaskContext& ctx);
     void evaluate_policy_hook();
     void apply_waiting_reorder(const std::vector<TaskId>& preferred_order);
+    void apply_admission_control(const policy::AdmissionControlDirective& directive);
 };
 
 } // namespace nicloadoff
