@@ -79,6 +79,18 @@ ctest --test-dir build
 
 The initial smoke test exercises the placeholder event queue implementation; expand the suite as simulator modules arrive.
 
+### Launch the ncurses TUI
+The interactive TUI lets you inspect profiles, step through workloads, and experiment with policy hooks without leaving the terminal.
+
+1. Build the project (see above) so the `nicloadoff_tui` binary is generated.
+2. From the repository root, run:
+   ```bash
+   ./build/tools/tui/nicloadoff_tui
+   ```
+3. Use the on-screen hints—`↑/↓` navigate menus, `Tab` swaps between profile/workload lists, `Space` toggles run/pause, `n` steps a single event, `H`/`N` toggle deterministic vs. stochastic sampling, `p` cycles built-in policies, `s` saves metrics, and `q` exits.
+
+The status panel shows the active policy, admission limits (if any), and live queue/resource metrics derived from the scheduler’s policy snapshot.
+
 ## Technology Stack (current plan)
 - C++20 for simulator and policy modules.
 - YAML/JSON for hardware profiles and workload specifications.
