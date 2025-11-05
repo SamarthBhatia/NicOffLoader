@@ -17,9 +17,31 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <cctype>
 
 namespace nicloadoff::cli {
 namespace {
+
+[[nodiscard]] std::string trim_copy(const std::string& input) {
+    const std::string whitespace = " \t\r\n";
+    const auto begin = input.find_first_not_of(whitespace);
+    if (begin == std::string::npos) {
+        return {};
+    }
+    const auto end = input.find_last_not_of(whitespace);
+    return input.substr(begin, end - begin + 1);
+}
+
+[[nodiscard]] std::string strip_quotes(std::string value) {
+    if (value.size() >= 2) {
+        char first = value.front();
+        char last = value.back();
+        if ((first == '"' || first == '\'') && last == first) {
+            return value.substr(1, value.size() - 2);
+        }
+    }
+    return value;
+}
 
 std::string service_mode_to_string(ServiceTimeMode mode) {
     switch (mode) {
@@ -113,6 +135,148 @@ double compute_throughput_per_second(std::size_t task_count, Duration makespan_u
         return 0.0;
     }
     return static_cast<double>(task_count) / seconds;
+}
+
+struct ManifestOptions {
+    std::optional<std::filesystem::path> profile;
+    std::optional<std::filesystem::path> workload;
+    std::optional<std::filesystem::path> output;
+    std::optional<std::uint64_t> seed;
+    std::optional<ServiceTimeMode> host_mode;
+    std::optional<ServiceTimeMode> nic_mode;
+    std::optional<std::string> policy_id;
+};
+
+bool parse_manifest_file(const std::filesystem::path& manifest_path,
+                         ManifestOptions& manifest,
+                         std::string& error) {
+    std::ifstream input(manifest_path);
+    if (!input) {
+        error = "failed to open manifest '" + manifest_path.string() + "' for reading";
+        return false;
+    }
+
+    const std::filesystem::path base_dir = manifest_path.parent_path();
+    std::string line;
+    std::size_t line_number = 0;
+    bool in_service_modes = false;
+
+    auto resolve_path = [&](const std::string& value) -> std::filesystem::path {
+        std::filesystem::path path_value = value;
+        if (path_value.is_relative()) {
+            path_value = base_dir / path_value;
+        }
+        return path_value;
+    };
+
+    while (std::getline(input, line)) {
+        ++line_number;
+
+        auto hash_pos = line.find('#');
+        if (hash_pos != std::string::npos) {
+            line = line.substr(0, hash_pos);
+        }
+        bool indented = !line.empty() && std::isspace(static_cast<unsigned char>(line[0]));
+        std::string trimmed = trim_copy(line);
+        if (trimmed.empty()) {
+            continue;
+        }
+
+        if (!indented) {
+            in_service_modes = false;
+        }
+
+        if (trimmed == "service_modes:") {
+            in_service_modes = true;
+            continue;
+        }
+
+        const auto colon_pos = trimmed.find(':');
+        if (colon_pos == std::string::npos) {
+            std::ostringstream oss;
+            oss << "manifest parse error at line " << line_number << ": expected 'key: value'";
+            error = oss.str();
+            return false;
+        }
+
+        std::string key = trim_copy(trimmed.substr(0, colon_pos));
+        std::string value = trim_copy(trimmed.substr(colon_pos + 1));
+        value = strip_quotes(value);
+
+        if (in_service_modes) {
+            if (key == "host") {
+                auto mode = parse_mode(value);
+                if (!mode) {
+                    std::ostringstream oss;
+                    oss << "manifest service_modes.host has unknown value '" << value << "'";
+                    error = oss.str();
+                    return false;
+                }
+                manifest.host_mode = *mode;
+            } else if (key == "nic") {
+                auto mode = parse_mode(value);
+                if (!mode) {
+                    std::ostringstream oss;
+                    oss << "manifest service_modes.nic has unknown value '" << value << "'";
+                    error = oss.str();
+                    return false;
+                }
+                manifest.nic_mode = *mode;
+            } else {
+                std::ostringstream oss;
+                oss << "manifest service_modes contains unknown key '" << key << "'";
+                error = oss.str();
+                return false;
+            }
+            continue;
+        }
+
+        if (key == "profile") {
+            if (value.empty()) {
+                error = "manifest field 'profile' requires a value";
+                return false;
+            }
+            manifest.profile = resolve_path(value);
+        } else if (key == "workload") {
+            if (value.empty()) {
+                error = "manifest field 'workload' requires a value";
+                return false;
+            }
+            manifest.workload = resolve_path(value);
+        } else if (key == "output") {
+            if (value.empty()) {
+                error = "manifest field 'output' requires a value";
+                return false;
+            }
+            manifest.output = resolve_path(value);
+        } else if (key == "policy") {
+            if (value.empty()) {
+                error = "manifest field 'policy' requires a value";
+                return false;
+            }
+            manifest.policy_id = value;
+        } else if (key == "seed") {
+            if (value.empty()) {
+                error = "manifest field 'seed' requires a value";
+                return false;
+            }
+            try {
+                manifest.seed = std::stoull(value);
+            } catch (const std::exception&) {
+                std::ostringstream oss;
+                oss << "manifest field 'seed' must be an unsigned integer (line " << line_number << ")";
+                error = oss.str();
+                return false;
+            }
+        } else {
+            std::ostringstream oss;
+            oss << "manifest contains unknown key '" << key << "'";
+            error = oss.str();
+            return false;
+        }
+    }
+
+    return true;
 }
 
 void write_report(const CliOptions& options,
@@ -213,6 +377,7 @@ void print_usage(std::ostream& out) {
     out << "Usage: nicloadoff_cli --profile <path> --workload <path> [options]\n"
         << "Options:\n"
         << "  --output <path>          Output JSON report path (default: run_metrics.json)\n"
+        << "  --config <path>          YAML manifest with profile/workload/policy defaults\n"
         << "  --seed <value>           RNG seed for stochastic service times (default: 1)\n"
         << "  --host-mode <mode>       Host service mode: deterministic|stochastic (default: deterministic)\n"
         << "  --nic-mode <mode>        NIC service mode: deterministic|stochastic (default: deterministic)\n"
@@ -221,6 +386,15 @@ void print_usage(std::ostream& out) {
 }
 
 bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& error) {
+    bool profile_cli = false;
+    bool workload_cli = false;
+    bool output_cli = false;
+    bool seed_cli = false;
+    bool host_cli = false;
+    bool nic_cli = false;
+    bool policy_cli = false;
+    bool manifest_cli = false;
+
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") {
@@ -233,18 +407,32 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
                 return false;
             }
             options.profile_path = argv[++i];
+            profile_cli = true;
         } else if (arg == "--workload") {
             if (i + 1 >= argc) {
                 error = "--workload requires a path argument";
                 return false;
             }
             options.workload_path = argv[++i];
+            workload_cli = true;
         } else if (arg == "--output") {
             if (i + 1 >= argc) {
                 error = "--output requires a path argument";
                 return false;
             }
             options.output_path = argv[++i];
+            output_cli = true;
+        } else if (arg == "--config" || arg == "--manifest") {
+            if (i + 1 >= argc) {
+                error = std::string(arg) + " requires a path argument";
+                return false;
+            }
+            if (manifest_cli) {
+                error = "manifest specified multiple times";
+                return false;
+            }
+            options.manifest_path = argv[++i];
+            manifest_cli = true;
         } else if (arg == "--seed") {
             if (i + 1 >= argc) {
                 error = "--seed requires a numeric argument";
@@ -256,6 +444,7 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
                 error = "invalid numeric value for --seed";
                 return false;
             }
+            seed_cli = true;
         } else if (arg == "--host-mode") {
             if (i + 1 >= argc) {
                 error = "--host-mode requires a value";
@@ -268,6 +457,7 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
                 return false;
             }
             options.host_mode = *mode;
+            host_cli = true;
         } else if (arg == "--nic-mode") {
             if (i + 1 >= argc) {
                 error = "--nic-mode requires a value";
@@ -280,6 +470,7 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
                 return false;
             }
             options.nic_mode = *mode;
+            nic_cli = true;
         } else if (arg == "--policy") {
             if (i + 1 >= argc) {
                 error = "--policy requires a value";
@@ -291,9 +482,50 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
                 return false;
             }
             options.policy_id = std::move(value);
+            policy_cli = true;
         } else {
             error = "unrecognised argument: " + arg;
             return false;
+        }
+    }
+
+    if (manifest_cli) {
+        ManifestOptions manifest_options;
+        if (!parse_manifest_file(options.manifest_path, manifest_options, error)) {
+            return false;
+        }
+        if (!profile_cli) {
+            if (!manifest_options.profile) {
+                error = "manifest does not provide a profile path";
+                return false;
+            }
+            options.profile_path = *manifest_options.profile;
+        }
+        if (!workload_cli) {
+            if (!manifest_options.workload) {
+                error = "manifest does not provide a workload path";
+                return false;
+            }
+            options.workload_path = *manifest_options.workload;
+        }
+        if (!output_cli && manifest_options.output) {
+            options.output_path = *manifest_options.output;
+        }
+        if (!seed_cli && manifest_options.seed) {
+            options.seed = *manifest_options.seed;
+        }
+        if (!host_cli && manifest_options.host_mode) {
+            options.host_mode = *manifest_options.host_mode;
+        }
+        if (!nic_cli && manifest_options.nic_mode) {
+            options.nic_mode = *manifest_options.nic_mode;
+        }
+        if (!policy_cli && manifest_options.policy_id) {
+            if (!policy::is_policy_supported(*manifest_options.policy_id)) {
+                error = "manifest policy '" + *manifest_options.policy_id + "' is not recognised";
+                return false;
+            }
+            options.policy_id = *manifest_options.policy_id;
         }
     }
 

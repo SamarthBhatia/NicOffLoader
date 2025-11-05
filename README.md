@@ -92,6 +92,22 @@ Once you have a profile and workload YAML ready, invoke the single-run CLI and o
 
 Available policy identifiers match the TUI presets: `none`, `descending-id`, `limit-active-1`, `prefer-host`, and `prefer-nic`.
 
+You can also supply defaults via a manifest:
+
+```yaml
+# run_manifest.yaml
+profile: profiles/bf2_default.yaml
+workload: workloads/examples/sequential_host.yaml
+policy: prefer-host
+output: results/run_host.json
+seed: 7
+service_modes:
+  host: deterministic
+  nic: stochastic
+```
+
+Run it with `./build/tools/cli/nicloadoff_cli --config run_manifest.yaml`. Command-line flags still override manifest settings.
+
 ### Launch the ncurses TUI
 The interactive TUI lets you inspect profiles, step through workloads, and experiment with policy hooks without leaving the terminal.
 

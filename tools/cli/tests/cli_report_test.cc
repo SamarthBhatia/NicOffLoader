@@ -85,5 +85,52 @@ int main() {
           "policy-enabled run should complete same number of tasks");
     std::filesystem::remove(options.output_path, ec);
 
+    const std::filesystem::path manifest_path = [&]() {
+        auto path = make_output_path();
+        return path.replace_extension(".yaml");
+    }();
+    const std::filesystem::path manifest_output = make_output_path();
+    {
+        std::ofstream manifest(manifest_path);
+        check(static_cast<bool>(manifest), "failed to open manifest output");
+        manifest << "profile: " << profile.string() << "\n";
+        manifest << "workload: " << workload.string() << "\n";
+        manifest << "output: " << manifest_output.string() << "\n";
+        manifest << "policy: prefer-nic\n";
+        manifest << "seed: 7\n";
+        manifest << "service_modes:\n";
+        manifest << "  host: deterministic\n";
+        manifest << "  nic: stochastic\n";
+    }
+
+    std::vector<std::string> argv_storage = {"nicloadoff_cli", "--config", manifest_path.string()};
+    std::vector<char*> argv_ptrs;
+    argv_ptrs.reserve(argv_storage.size());
+    for (auto& arg : argv_storage) {
+        argv_ptrs.push_back(arg.data());
+    }
+
+    CliOptions manifest_options;
+    std::string manifest_error;
+    if (!parse_arguments(static_cast<int>(argv_ptrs.size()), argv_ptrs.data(), manifest_options, manifest_error)) {
+        std::fprintf(stderr, "manifest parse failed: %s\n", manifest_error.c_str());
+        std::abort();
+    }
+
+    check(manifest_options.profile_path == profile, "manifest should set profile path");
+    check(manifest_options.workload_path == workload, "manifest should set workload path");
+    check(manifest_options.output_path == manifest_output, "manifest should set output path");
+    check(manifest_options.policy_id == "prefer-nic", "manifest should set policy id");
+    check(manifest_options.seed == 7, "manifest should set seed");
+    check(manifest_options.nic_mode == nicloadoff::ServiceTimeMode::kStochastic,
+          "manifest should set NIC service mode");
+
+    const RunSummary manifest_summary = run_simulation(manifest_options);
+    check(manifest_summary.completed_tasks == summary.completed_tasks,
+          "manifest-driven run should complete same number of tasks");
+
+    std::filesystem::remove(manifest_output, ec);
+    std::filesystem::remove(manifest_path, ec);
+
     return 0;
 }

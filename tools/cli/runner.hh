@@ -15,6 +15,7 @@ struct CliOptions {
     std::filesystem::path profile_path;
     std::filesystem::path workload_path;
     std::filesystem::path output_path{"run_metrics.json"};
+    std::filesystem::path manifest_path;
     std::uint64_t seed{1};
     ServiceTimeMode host_mode{ServiceTimeMode::kDeterministic};
     ServiceTimeMode nic_mode{ServiceTimeMode::kDeterministic};
