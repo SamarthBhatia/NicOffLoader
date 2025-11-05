@@ -16,6 +16,8 @@
 namespace nicloadoff {
 
 class ServiceTimeModel;
+struct RunMetrics;
+struct PolicyStateSnapshot;
 
 class SchedulerError : public std::runtime_error {
   public:
@@ -59,6 +61,8 @@ class BasicScheduler {
     [[nodiscard]] std::size_t events_processed() const noexcept { return events_processed_; }
     [[nodiscard]] bool has_pending_work() const noexcept { return !queue_.empty() || !waiting_queue_.empty(); }
     [[nodiscard]] const std::vector<TaskMetrics>& completed_metrics() const noexcept { return completed_metrics_; }
+    [[nodiscard]] RunMetrics aggregated_metrics() const;
+    [[nodiscard]] PolicyStateSnapshot policy_state_snapshot() const;
 
   private:
     struct StageRuntime {

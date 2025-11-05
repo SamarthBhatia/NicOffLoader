@@ -1,5 +1,7 @@
 #include "nicloadoff/scheduler.hh"
 
+#include "nicloadoff/policy_state.hh"
+#include "nicloadoff/run_metrics.hh"
 #include "nicloadoff/service_time_model.hh"
 
 #include <algorithm>
@@ -311,6 +313,43 @@ std::vector<BasicScheduler::TaskStatus> BasicScheduler::task_statuses() const {
         return lhs.id < rhs.id;
     });
     return statuses;
+}
+
+RunMetrics BasicScheduler::aggregated_metrics() const { return compute_run_metrics(*this); }
+
+PolicyStateSnapshot BasicScheduler::policy_state_snapshot() const {
+    PolicyStateSnapshot snapshot{};
+    snapshot.current_time = current_time_;
+    snapshot.queues.event_queue_depth = queue_.size();
+    snapshot.queues.waiting_queue_depth = waiting_queue_.size();
+    snapshot.queues.processed_events = events_processed_;
+    snapshot.run_metrics = compute_run_metrics(completed_metrics_);
+
+    const std::vector<Resource> resource_values = resources_.snapshot();
+    snapshot.resources.reserve(resource_values.size());
+    for (const Resource& resource : resource_values) {
+        PolicyResourceState resource_state{};
+        resource_state.id = resource.id();
+        resource_state.type = resource.type();
+        resource_state.capacity = resource.capacity();
+        resource_state.in_use = resource.in_use();
+        snapshot.resources.push_back(resource_state);
+    }
+
+    const std::vector<TaskStatus> statuses = task_statuses();
+    snapshot.tasks.reserve(statuses.size());
+    for (const TaskStatus& status : statuses) {
+        PolicyTaskState task_state{};
+        task_state.id = status.id;
+        task_state.stage_index = status.stage_index;
+        task_state.total_stages = status.total_stages;
+        task_state.active = status.active;
+        task_state.waiting = status.waiting;
+        task_state.completed = status.completed;
+        snapshot.tasks.push_back(task_state);
+    }
+
+    return snapshot;
 }
 
 } // namespace nicloadoff

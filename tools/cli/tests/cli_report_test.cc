@@ -1,0 +1,82 @@
+#include "../runner.hh"
+
+#include <cstdlib>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <random>
+#include <string>
+#include <vector>
+
+namespace {
+
+void check(bool condition, const char* message) {
+    if (!condition) {
+        std::fprintf(stderr, "%s\n", message);
+        std::abort();
+    }
+}
+
+void assert_contains(const std::string& haystack, const std::string& needle, const char* message) {
+    if (haystack.find(needle) == std::string::npos) {
+        std::fprintf(stderr, "%s (missing: %s)\n", message, needle.c_str());
+        std::abort();
+    }
+}
+
+std::filesystem::path make_output_path() {
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<std::uint32_t> dist;
+    const auto base = std::filesystem::temp_directory_path();
+    for (int attempt = 0; attempt < 32; ++attempt) {
+        auto candidate = base / ("nicloadoff_cli_report_" + std::to_string(dist(rng)) + ".json");
+        if (!std::filesystem::exists(candidate)) {
+            return candidate;
+        }
+    }
+    return base / "nicloadoff_cli_report_fallback.json";
+}
+
+} // namespace
+
+int main() {
+    using namespace nicloadoff::cli;
+
+    const std::filesystem::path source_root = NICLOADOFF_SOURCE_DIR;
+    const std::filesystem::path profile = source_root / "profiles" / "bf2_default.yaml";
+    const std::filesystem::path workload = source_root / "workloads" / "examples" / "sequential_host.yaml";
+    check(std::filesystem::exists(profile), "profile fixture missing");
+    check(std::filesystem::exists(workload), "workload fixture missing");
+
+    CliOptions options;
+    options.profile_path = profile;
+    options.workload_path = workload;
+    options.output_path = make_output_path();
+    options.seed = 1;
+    options.host_mode = nicloadoff::ServiceTimeMode::kDeterministic;
+    options.nic_mode = nicloadoff::ServiceTimeMode::kDeterministic;
+
+    const RunSummary summary = run_simulation(options);
+    check(summary.completed_tasks == 2, "expected two completed tasks");
+    check(summary.metrics.aggregate.latency_stats.count == 2, "expected two latency samples");
+    check(summary.metrics.tasks.size() == 2, "expected two task metric entries");
+
+    std::ifstream input(options.output_path);
+    check(static_cast<bool>(input), "expected report file to open");
+    std::string content((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    input.close();
+
+    assert_contains(content, "\"profile\": {", "expected profile section");
+    assert_contains(content, "\"workload\": {", "expected workload section");
+    assert_contains(content, "\"run\": {", "expected run section");
+    assert_contains(content, "\"aggregates\": {", "expected aggregates section");
+    assert_contains(content, "\"tasks\": [", "expected task list section");
+    assert_contains(content, "\"completed_tasks\": 2", "expected completed task count");
+    assert_contains(content, "\"throughput_tasks_per_sec\": 400000.000000", "expected throughput value");
+
+    std::error_code ec;
+    std::filesystem::remove(options.output_path, ec);
+
+    return 0;
+}
