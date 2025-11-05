@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <initializer_list>
+#include <memory>
 
 namespace {
 
@@ -312,21 +313,19 @@ int main() {
         workload.tasks.push_back(nicloadoff::TaskSpec{
             .id = 29,
             .arrival_time = 0.0,
-            .stages = {make_stage(6.0, {{nicloadoff::ResourceClass::kHostCpu, 1.0}})},
+            .stages = {make_stage(5.0, {{nicloadoff::ResourceClass::kHostCpu, 1.0}})},
         });
         workload.tasks.push_back(nicloadoff::TaskSpec{
             .id = 30,
-            .arrival_time = 1.0,
-            .stages = {make_stage(4.0,
-                                  {{nicloadoff::ResourceClass::kHostCpu, 1.0},
-                                   {nicloadoff::ResourceClass::kNicCpu, 0.1}})},
+            .arrival_time = 0.0,
+            .stages = {make_stage(10.0, {{nicloadoff::ResourceClass::kHostCpu, 1.0}})},
         });
         workload.tasks.push_back(nicloadoff::TaskSpec{
             .id = 31,
-            .arrival_time = 1.0,
-            .stages = {make_stage(4.0,
-                                  {{nicloadoff::ResourceClass::kHostCpu, 1.0},
-                                   {nicloadoff::ResourceClass::kNicCpu, 0.8}})},
+            .arrival_time = 0.0,
+            .stages = {make_stage(1.0,
+                                  {{nicloadoff::ResourceClass::kHostCpu, 0.1},
+                                   {nicloadoff::ResourceClass::kNicCpu, 0.9}})},
         });
 
         {
@@ -364,6 +363,66 @@ int main() {
             check(completed[1] == 31, "expected NIC-heavy task to complete second under nic preference");
             check(completed[2] == 30, "expected host-heavy task to complete last under nic preference");
         }
+
+        auto run_with_policy = [&](const std::string& policy_id) {
+            auto inventory = nicloadoff::make_resource_inventory_from_profile(profile);
+            auto tasks = nicloadoff::make_tasks_from_spec(workload, inventory.ids);
+            nicloadoff::BasicScheduler scheduler(std::move(inventory.pool));
+            std::unique_ptr<nicloadoff::policy::PolicyHook> policy;
+            if (!policy_id.empty()) {
+                policy = nicloadoff::policy::make_policy_hook(policy_id);
+                scheduler.set_policy_hook(policy.get());
+            }
+            for (const auto& task : tasks) {
+                scheduler.submit_task(task);
+            }
+            scheduler.run_until_empty();
+            return scheduler.aggregated_metrics();
+        };
+
+        const auto host_pref_metrics = run_with_policy("prefer-host");
+        const auto nic_pref_metrics = run_with_policy("prefer-nic");
+
+        if (host_pref_metrics.tasks.size() != 3) {
+            std::fprintf(stderr, "expected three task metrics for host-pref run (got %zu)\n",
+                         host_pref_metrics.tasks.size());
+            std::abort();
+        }
+        if (nic_pref_metrics.tasks.size() != 3) {
+            std::fprintf(stderr, "expected three task metrics for nic-pref run (got %zu)\n",
+                         nic_pref_metrics.tasks.size());
+            std::abort();
+        }
+        check(host_pref_metrics.tasks[1].id == 30, "host-pref policy should schedule host task second");
+        check(nic_pref_metrics.tasks[1].id == 31, "nic-pref policy should schedule NIC task second");
+
+        auto find_task = [](const nicloadoff::RunMetrics& metrics, nicloadoff::TaskId id) {
+            for (const auto& task : metrics.tasks) {
+                if (task.id == id) {
+                    return task;
+                }
+            }
+            std::fprintf(stderr, "task %d not found in metrics\n", static_cast<int>(id));
+            std::abort();
+        };
+
+        auto host_metrics_30 = find_task(host_pref_metrics, 30);
+        auto host_metrics_31 = find_task(host_pref_metrics, 31);
+        assert_near(host_metrics_30.queue_time, 5.0, 1e-9);
+        assert_near(host_metrics_31.queue_time, 15.0, 1e-9);
+
+        auto nic_metrics_30 = find_task(nic_pref_metrics, 30);
+        auto nic_metrics_31 = find_task(nic_pref_metrics, 31);
+        assert_near(nic_metrics_31.queue_time, 5.0, 1e-9);
+        assert_near(nic_metrics_30.queue_time, 6.0, 1e-9);
+
+        double host_queue = host_pref_metrics.aggregate.total_queue_time;
+        double nic_queue = nic_pref_metrics.aggregate.total_queue_time;
+        check(host_queue > nic_queue, "NIC preference should reduce total queued time for skewed workload");
+
+        double host_latency = host_pref_metrics.aggregate.total_latency;
+        double nic_latency = nic_pref_metrics.aggregate.total_latency;
+        check(host_latency > nic_latency, "NIC preference should reduce total latency for skewed workload");
     }
 
     return 0;
