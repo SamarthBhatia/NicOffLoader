@@ -4,9 +4,11 @@
 #include "nicloadoff/profile_resources.hh"
 #include "nicloadoff/task.hh"
 
+#include <cstddef>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace nicloadoff {
@@ -55,6 +57,20 @@ struct WorkloadSpec {
     std::vector<TaskDAGSpec> dag_tasks;
 };
 
+struct TaskDagNode {
+    std::string name;
+    TaskStage stage;
+    std::vector<std::size_t> successors;
+};
+
+struct TaskDag {
+    TaskId id{};
+    SimTime arrival_time{0.0};
+    std::vector<TaskDagNode> nodes;
+    std::vector<std::size_t> entry_nodes;
+    std::unordered_map<std::string, std::size_t> index_by_name;
+};
+
 class WorkloadSpecError : public std::runtime_error {
   public:
     explicit WorkloadSpecError(const std::string& message) : std::runtime_error(message) {}
@@ -62,6 +78,9 @@ class WorkloadSpecError : public std::runtime_error {
 
 Task make_task_from_spec(const TaskSpec& spec, const ProfileResourceIds& ids);
 std::vector<Task> make_tasks_from_spec(const WorkloadSpec& spec, const ProfileResourceIds& ids);
+void validate_task_dag_spec(const TaskDAGSpec& spec);
+TaskDag make_task_dag_from_spec(const TaskDAGSpec& spec, const ProfileResourceIds& ids);
+std::vector<std::size_t> topological_order(const TaskDag& dag);
 
 } // namespace nicloadoff
 

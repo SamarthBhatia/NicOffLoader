@@ -571,6 +571,12 @@ TaskDAGSpec parse_task_dag(const YamlNode& node, const std::string& context) {
         std::sort(task.entry_points.begin(), task.entry_points.end());
     }
 
+    try {
+        validate_task_dag_spec(task);
+    } catch (const WorkloadSpecError& err) {
+        throw WorkloadLoaderError(make_error(context + ".dag", err.what()));
+    }
+
     return task;
 }
 

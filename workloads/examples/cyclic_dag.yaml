@@ -1,0 +1,27 @@
+schema_version: 0.1
+workload_name: cyclic_dag
+description: >
+  Intentional cycle between two nodes to verify loader validation failures.
+tasks:
+  - id: 999
+    arrival_time: 0.0
+    dag:
+      nodes:
+        - name: a
+          stage:
+            deterministic_service_time: 1.0
+            demands:
+              - resource: host_cpu
+                units: 1.0
+          successors:
+            - b
+        - name: b
+          stage:
+            deterministic_service_time: 1.0
+            demands:
+              - resource: nic_cpu
+                units: 1.0
+          successors:
+            - a
+      entry:
+        - a

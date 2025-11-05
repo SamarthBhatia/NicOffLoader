@@ -52,7 +52,7 @@ int main() {
             auto workload = nicloadoff::load_workload_from_file(path);
             assert(workload.spec.tasks.empty());
             assert(workload.spec.dag_tasks.size() == 1);
-            const auto& graph = workload.spec.dag_tasks[0];
+            const auto& graph [[maybe_unused]] = workload.spec.dag_tasks[0];
             assert(graph.id == 501);
             assert(graph.nodes.size() == 2);
             assert(graph.entry_points.size() == 1);
@@ -70,6 +70,27 @@ int main() {
             assert(nic_node.stage.deterministic_service_time.value() == 1.0);
             assert(nic_node.stage.demands.size() == 2);
             assert(nic_node.successors.empty());
+        }
+
+        {
+            auto path = fixture_path("multi_entry_dag.yaml");
+            auto workload = nicloadoff::load_workload_from_file(path);
+            assert(workload.spec.dag_tasks.size() == 1);
+            const auto& graph [[maybe_unused]] = workload.spec.dag_tasks[0];
+            assert(graph.entry_points.size() == 2);
+            assert(graph.entry_points[0] == "host_entry");
+            assert(graph.entry_points[1] == "nic_entry");
+        }
+
+        {
+            auto path = fixture_path("cyclic_dag.yaml");
+            bool caught [[maybe_unused]] = false;
+            try {
+                static_cast<void>(nicloadoff::load_workload_from_file(path));
+            } catch (const nicloadoff::WorkloadLoaderError&) {
+                caught = true;
+            }
+            assert(caught && "cyclic DAG should fail to load");
         }
 
         std::cout << "workload_loader_test passed\n";

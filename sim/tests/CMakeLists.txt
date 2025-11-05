@@ -23,6 +23,11 @@ target_link_libraries(workload_loader_test PRIVATE nicloadoff_sim)
 
 add_test(NAME workload_loader_test COMMAND workload_loader_test)
 
+add_executable(task_dag_test task_dag_test.cc)
+target_link_libraries(task_dag_test PRIVATE nicloadoff_sim)
+
+add_test(NAME task_dag_test COMMAND task_dag_test)
+
 add_executable(run_metrics_test run_metrics_test.cc)
 target_link_libraries(run_metrics_test PRIVATE nicloadoff_sim)
 

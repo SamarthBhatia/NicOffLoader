@@ -1,0 +1,33 @@
+schema_version: 0.1
+workload_name: multi_entry_dag
+description: >
+  DAG with two entry points converging on a NIC stage to exercise inference logic.
+tasks:
+  - id: 602
+    arrival_time: 0.5
+    dag:
+      nodes:
+        - name: host_entry
+          stage:
+            deterministic_service_time: 5.0
+            demands:
+              - resource: host_cpu
+                units: 1.0
+          successors:
+            - nic_stage
+        - name: nic_entry
+          stage:
+            deterministic_service_time: 2.0
+            demands:
+              - resource: nic_cpu
+                units: 1.0
+          successors:
+            - nic_stage
+        - name: nic_stage
+          stage:
+            deterministic_service_time: 1.0
+            demands:
+              - resource: host_cpu
+                units: 0.2
+              - resource: nic_cpu
+                units: 1.5
