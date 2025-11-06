@@ -1,6 +1,7 @@
 #include "runner.hh"
 
 #include "nicloadoff/basic_policy_hooks.hh"
+#include "nicloadoff/dag_submission_controller.hh"
 #include "nicloadoff/profile.hh"
 #include "nicloadoff/profile_resources.hh"
 #include "nicloadoff/scheduler.hh"
@@ -110,20 +111,38 @@ WorkloadSpec apply_service_modes(const WorkloadSpec& base, ServiceTimeMode host_
             }
         }
     }
+    for (auto& dag : spec.dag_tasks) {
+        for (auto& node : dag.nodes) {
+            auto& stage = node.stage;
+            if (!stage.service_profile) {
+                continue;
+            }
+            if (stage.service_profile->domain == ServiceTimeDomain::kHost) {
+                stage.service_profile->mode = host_mode;
+            } else if (stage.service_profile->domain == ServiceTimeDomain::kNic) {
+                stage.service_profile->mode = nic_mode;
+            }
+        }
+    }
     return spec;
 }
 
 SimTime min_arrival_time(const WorkloadSpec& spec) {
-    if (spec.tasks.empty()) {
-        return 0.0;
-    }
-    SimTime min_time = spec.tasks.front().arrival_time;
+    bool found = false;
+    SimTime min_time = 0.0;
     for (const auto& task : spec.tasks) {
-        if (task.arrival_time < min_time) {
+        if (!found || task.arrival_time < min_time) {
             min_time = task.arrival_time;
+            found = true;
         }
     }
-    return min_time;
+    for (const auto& dag : spec.dag_tasks) {
+        if (!found || dag.arrival_time < min_time) {
+            min_time = dag.arrival_time;
+            found = true;
+        }
+    }
+    return found ? min_time : 0.0;
 }
 
 double compute_throughput_per_second(std::size_t task_count, Duration makespan_us) {
@@ -547,6 +566,7 @@ RunSummary run_simulation(const CliOptions& options) {
 
     ServiceTimeModel service_model(profile, options.seed);
     auto inventory = make_resource_inventory_from_profile(profile);
+    DagSubmissionController dag_controller = DagSubmissionController::from_spec(workload, inventory.ids);
     const auto tasks = make_tasks_from_spec(workload, inventory.ids);
     BasicScheduler scheduler(std::move(inventory.pool), &service_model);
 
@@ -558,7 +578,15 @@ RunSummary run_simulation(const CliOptions& options) {
     for (const auto& task : tasks) {
         scheduler.submit_task(task);
     }
-    scheduler.run_until_empty();
+    if (!dag_controller.empty()) {
+        dag_controller.submit_initial(scheduler);
+    }
+
+    while (scheduler.step_once()) {
+        if (auto last = scheduler.last_event(); last && last->metadata.type == EventType::kTaskComplete) {
+            dag_controller.handle_task_completion(last->metadata.id, scheduler.current_time(), scheduler);
+        }
+    }
 
     const RunMetrics run_metrics = scheduler.aggregated_metrics();
     const SimTime finish_time = scheduler.current_time();

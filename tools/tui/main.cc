@@ -1,4 +1,5 @@
 #include "nicloadoff/basic_policy_hooks.hh"
+#include "nicloadoff/dag_submission_controller.hh"
 #include "nicloadoff/profile.hh"
 #include "nicloadoff/profile_resources.hh"
 #include "nicloadoff/policy_hook.hh"
@@ -315,6 +316,7 @@ class SimulationSession {
         service_model_ = std::make_unique<ServiceTimeModel>(profile_, seed_);
         auto inventory = make_resource_inventory_from_profile(profile_);
         resource_ids_ = inventory.ids;
+        dag_controller_ = DagSubmissionController::from_spec(workload_, resource_ids_);
         auto tasks = make_tasks_from_spec(workload_, resource_ids_);
         scheduler_ = std::make_unique<BasicScheduler>(std::move(inventory.pool), service_model_.get());
         if (policy_hook_) {
@@ -322,6 +324,9 @@ class SimulationSession {
         }
         for (const auto& task : tasks) {
             scheduler_->submit_task(task);
+        }
+        if (!dag_controller_.empty()) {
+            dag_controller_.submit_initial(*scheduler_);
         }
         event_log_.clear();
         finished_ = false;
@@ -336,6 +341,9 @@ class SimulationSession {
             return false;
         }
         if (auto last = scheduler_->last_event()) {
+            if (!dag_controller_.empty() && last->metadata.type == EventType::kTaskComplete) {
+                dag_controller_.handle_task_completion(last->metadata.id, scheduler_->current_time(), *scheduler_);
+            }
             event_log_.push_back(format_event(*last));
             if (event_log_.size() > max_event_log_) {
                 event_log_.erase(event_log_.begin());
@@ -387,6 +395,7 @@ class SimulationSession {
     config::Profile profile_;
     WorkloadSpec workload_;
     ProfileResourceIds resource_ids_{};
+    DagSubmissionController dag_controller_;
     std::unique_ptr<ServiceTimeModel> service_model_;
     std::unique_ptr<BasicScheduler> scheduler_;
     std::unique_ptr<policy::PolicyHook> policy_hook_;
@@ -511,6 +520,21 @@ struct AppState {
         WorkloadSpec spec = base;
         for (auto& task : spec.tasks) {
             for (auto& stage : task.stages) {
+                if (!stage.service_profile) {
+                    continue;
+                }
+                if (stage.service_profile->domain == ServiceTimeDomain::kHost) {
+                    stage.service_profile->mode =
+                        host_stochastic ? ServiceTimeMode::kStochastic : ServiceTimeMode::kDeterministic;
+                } else if (stage.service_profile->domain == ServiceTimeDomain::kNic) {
+                    stage.service_profile->mode =
+                        nic_stochastic ? ServiceTimeMode::kStochastic : ServiceTimeMode::kDeterministic;
+                }
+            }
+        }
+        for (auto& dag : spec.dag_tasks) {
+            for (auto& node : dag.nodes) {
+                auto& stage = node.stage;
                 if (!stage.service_profile) {
                     continue;
                 }

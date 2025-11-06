@@ -1,5 +1,7 @@
 set(SIM_SOURCES
     src/event_queue.cc
+    src/dag_submission_controller.cc
+    src/dag_runtime.cc
     src/resource.cc
     src/scheduler.cc
     src/profile_resources.cc

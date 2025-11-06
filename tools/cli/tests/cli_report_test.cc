@@ -75,8 +75,20 @@ int main() {
     assert_contains(content, "\"completed_tasks\": 2", "expected completed task count");
     assert_contains(content, "\"throughput_tasks_per_sec\": 400000.000000", "expected throughput value");
 
+    const std::filesystem::path dag_workload = source_root / "workloads" / "examples" / "skew_dag.yaml";
+    check(std::filesystem::exists(dag_workload), "dag workload fixture missing");
+
     std::error_code ec;
     std::filesystem::remove(options.output_path, ec);
+
+    CliOptions dag_options = options;
+    dag_options.workload_path = dag_workload;
+    dag_options.output_path = make_output_path();
+
+    const RunSummary dag_summary = run_simulation(dag_options);
+    check(dag_summary.completed_tasks == 2, "expected two DAG node completions");
+    check(dag_summary.metrics.tasks.size() == 2, "expected two DAG task metrics");
+    std::filesystem::remove(dag_options.output_path, ec);
 
     options.output_path = make_output_path();
     options.policy_id = "descending-id";

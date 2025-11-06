@@ -74,9 +74,6 @@ Task make_task_from_spec(const TaskSpec& spec, const ProfileResourceIds& ids) {
 }
 
 std::vector<Task> make_tasks_from_spec(const WorkloadSpec& spec, const ProfileResourceIds& ids) {
-    if (!spec.dag_tasks.empty()) {
-        throw WorkloadSpecError("graph-based tasks are not yet supported for make_tasks_from_spec");
-    }
     std::vector<Task> tasks;
     tasks.reserve(spec.tasks.size());
     for (const auto& task_spec : spec.tasks) {
