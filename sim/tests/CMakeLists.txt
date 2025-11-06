@@ -43,6 +43,11 @@ target_link_libraries(scheduler_dag_regression_test PRIVATE nicloadoff_sim)
 
 add_test(NAME scheduler_dag_regression_test COMMAND scheduler_dag_regression_test)
 
+add_executable(scheduler_stochastic_regression_test scheduler_stochastic_regression_test.cc)
+target_link_libraries(scheduler_stochastic_regression_test PRIVATE nicloadoff_sim)
+
+add_test(NAME scheduler_stochastic_regression_test COMMAND scheduler_stochastic_regression_test)
+
 add_executable(run_metrics_test run_metrics_test.cc)
 target_link_libraries(run_metrics_test PRIVATE nicloadoff_sim)
 
