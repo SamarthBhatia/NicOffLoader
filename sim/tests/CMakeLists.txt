@@ -58,6 +58,11 @@ target_link_libraries(scheduler_high_variance_regression_test PRIVATE nicloadoff
 
 add_test(NAME scheduler_high_variance_regression_test COMMAND scheduler_high_variance_regression_test)
 
+add_executable(scheduler_property_fuzz_test scheduler_property_fuzz_test.cc)
+target_link_libraries(scheduler_property_fuzz_test PRIVATE nicloadoff_sim)
+
+add_test(NAME scheduler_property_fuzz_test COMMAND scheduler_property_fuzz_test)
+
 add_executable(scheduler_stochastic_regression_test scheduler_stochastic_regression_test.cc)
 target_link_libraries(scheduler_stochastic_regression_test PRIVATE nicloadoff_sim)
 
