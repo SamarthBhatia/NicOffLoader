@@ -2,3 +2,63 @@ add_executable(event_queue_smoke_test event_queue_smoke_test.cc)
 target_link_libraries(event_queue_smoke_test PRIVATE nicloadoff_sim)
 
 add_test(NAME event_queue_smoke_test COMMAND event_queue_smoke_test)
+
+add_executable(service_time_model_test service_time_model_test.cc)
+target_link_libraries(service_time_model_test PRIVATE nicloadoff_sim)
+
+add_test(NAME service_time_model_test COMMAND service_time_model_test)
+
+add_executable(basic_scheduler_test basic_scheduler_test.cc)
+target_link_libraries(basic_scheduler_test PRIVATE nicloadoff_sim)
+
+add_test(NAME basic_scheduler_test COMMAND basic_scheduler_test)
+
+add_executable(profile_loader_test profile_loader_test.cc)
+target_link_libraries(profile_loader_test PRIVATE nicloadoff_sim)
+
+add_test(NAME profile_loader_test COMMAND profile_loader_test)
+
+add_executable(workload_loader_test workload_loader_test.cc)
+target_link_libraries(workload_loader_test PRIVATE nicloadoff_sim)
+
+add_test(NAME workload_loader_test COMMAND workload_loader_test)
+
+add_executable(task_dag_test task_dag_test.cc)
+target_link_libraries(task_dag_test PRIVATE nicloadoff_sim)
+
+add_test(NAME task_dag_test COMMAND task_dag_test)
+
+add_executable(dag_runtime_test dag_runtime_test.cc)
+target_link_libraries(dag_runtime_test PRIVATE nicloadoff_sim)
+
+add_test(NAME dag_runtime_test COMMAND dag_runtime_test)
+
+add_executable(dag_submission_controller_test dag_submission_controller_test.cc)
+target_link_libraries(dag_submission_controller_test PRIVATE nicloadoff_sim)
+
+add_test(NAME dag_submission_controller_test COMMAND dag_submission_controller_test)
+
+add_executable(scheduler_dag_regression_test scheduler_dag_regression_test.cc)
+target_link_libraries(scheduler_dag_regression_test PRIVATE nicloadoff_sim)
+
+add_test(NAME scheduler_dag_regression_test COMMAND scheduler_dag_regression_test)
+
+add_executable(scheduler_contention_regression_test scheduler_contention_regression_test.cc)
+target_link_libraries(scheduler_contention_regression_test PRIVATE nicloadoff_sim)
+
+add_test(NAME scheduler_contention_regression_test COMMAND scheduler_contention_regression_test)
+
+add_executable(scheduler_high_variance_regression_test scheduler_high_variance_regression_test.cc)
+target_link_libraries(scheduler_high_variance_regression_test PRIVATE nicloadoff_sim)
+
+add_test(NAME scheduler_high_variance_regression_test COMMAND scheduler_high_variance_regression_test)
+
+add_executable(scheduler_stochastic_regression_test scheduler_stochastic_regression_test.cc)
+target_link_libraries(scheduler_stochastic_regression_test PRIVATE nicloadoff_sim)
+
+add_test(NAME scheduler_stochastic_regression_test COMMAND scheduler_stochastic_regression_test)
+
+add_executable(run_metrics_test run_metrics_test.cc)
+target_link_libraries(run_metrics_test PRIVATE nicloadoff_sim)
+
+add_test(NAME run_metrics_test COMMAND run_metrics_test)

@@ -10,6 +10,7 @@
 - Consult `status.md` before starting work to see active phase goals, Done/Next/Remaining bullets, and recent decisions.
 - After every coding session, append succinct updates under the touched phase: note shipped changes, queue the next actionable task, and flag remaining blockers.
 - Create new sub-bullets only when a phase expands; otherwise edit in place so the record stays current.
+- When a discrete feature wraps up, surface it promptly so we can open a pull request against `main`.
 
 ## Build, Test, and Development Commands
 - `cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo` configures the project (once CMakeLists lands); rerun after dependency changes.

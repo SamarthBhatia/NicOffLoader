@@ -11,26 +11,40 @@ int main() {
     assert(queue.empty());
     assert(queue.size() == 0);
 
-    queue.push(ScheduledEvent{.timestamp = 5.0, .id = 1});
-    queue.push(ScheduledEvent{.timestamp = 1.0, .id = 2});
-    queue.push(ScheduledEvent{.timestamp = 3.0, .id = 3});
+    queue.push(ScheduledEvent{
+        .timestamp = 5.0,
+        .id = 1,
+        .metadata = {.type = nicloadoff::EventType::kTaskArrival, .id = 1},
+    });
+    queue.push(ScheduledEvent{
+        .timestamp = 1.0,
+        .id = 2,
+        .metadata = {.type = nicloadoff::EventType::kTaskArrival, .id = 2},
+    });
+    queue.push(ScheduledEvent{
+        .timestamp = 3.0,
+        .id = 3,
+        .metadata = {.type = nicloadoff::EventType::kTaskArrival, .id = 3},
+    });
 
     assert(!queue.empty());
     assert(queue.size() == 3);
 
-    auto first = queue.pop();
+    [[maybe_unused]] auto first = queue.pop();
     assert(first.has_value());
     assert(first->id == 2);
+    assert(first->metadata.id == 2);
+    assert(first->metadata.type == nicloadoff::EventType::kTaskArrival);
 
-    auto second = queue.pop();
+    [[maybe_unused]] auto second = queue.pop();
     assert(second.has_value());
     assert(second->id == 3);
 
-    auto third = queue.pop();
+    [[maybe_unused]] auto third = queue.pop();
     assert(third.has_value());
     assert(third->id == 1);
 
-    auto none = queue.pop();
+    [[maybe_unused]] auto none = queue.pop();
     assert(!none.has_value());
     assert(queue.empty());
     assert(queue.size() == 0);

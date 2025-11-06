@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+  pull_request:
+    branches:
+      - develop
+      - main
+
+jobs:
+  build-and-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure clang-format (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          if ! command -v clang-format >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y clang-format
+          fi
+
+      - name: Ensure clang-format (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          if ! command -v clang-format >/dev/null; then
+            brew install clang-format
+          fi
+
+      - name: Install cmake-format
+        run: |
+          python3 -m venv cmakelang-venv
+          source cmakelang-venv/bin/activate
+          pip install --upgrade pip
+          pip install cmakelang==0.6.13
+          echo "$PWD/cmakelang-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Check C++ formatting
+        run: |
+          clang-format --version
+          files=$(git ls-files '*.cc' '*.hh' '*.cpp' '*.hpp')
+          if [ -n "$files" ]; then
+            clang-format --dry-run --Werror $files
+          fi
+
+      - name: Check CMake formatting
+        run: |
+          cmake-format --version
+          files=$(git ls-files '*CMakeLists.txt' '*.cmake')
+          if [ -n "$files" ]; then
+            cmake-format --check $files
+          fi
+
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

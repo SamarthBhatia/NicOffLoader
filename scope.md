@@ -154,7 +154,7 @@ Stretch goals (nice‑to‑have, not required for pass):
 
 ## 12) Review Checklist (Before Coding)
 
-* [ ] Primary claim approved by advisor.
+* [ ] Primary claim reviewed and accepted.
 * [ ] Goals/non‑goals acknowledged.
 * [ ] Metrics and success thresholds accepted.
 * [ ] Experiment matrix sketched and sized.

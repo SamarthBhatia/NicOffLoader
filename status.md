@@ -4,21 +4,21 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 0 — Project setup
 - **Focus:** Scope definition, repo scaffolding, CI/tooling.
-- **Done:** Established contributor guide (`AGENTS.md`); created status tracking workflow; captured scope & success criteria in `scope.md`; scaffolded repository layout; introduced CMake+Ninja build with placeholder simulator library and smoke test (`sim/`).
-- **Next:** Author GitHub Actions workflow (Linux + macOS) running configure, build, and `ctest`.
-- **Remaining:** Add formatting hooks (clang-format/cmake-format), document toolchain bootstrap, ensure clean checkout builds/tests successfully on all target platforms.
+- **Done:** Established contributor guide (`AGENTS.md`); created status tracking workflow; captured scope & success criteria in `scope.md`; scaffolded repository layout; introduced CMake+Ninja build with placeholder simulator library and smoke test (`sim/`); deployed GitHub Actions workflow covering Linux/macOS configure, build, and `ctest`; documented local toolchain/bootstrap requirements in `README.md`; added clang-format/cmake-format enforcement to CI with repo configs; switched CI cmake-format install to a virtualenv to satisfy PEP 668; verified clean macOS configure/build/test from a fresh build tree; reformatted root and simulator CMakeLists with `cmake-format` to clear the Linux check failure; re-ran CI builds on Linux/macOS to confirm `cmake-format` lint passes alongside the Homebrew `clang-format` install; documented the macOS/Homebrew cancellation countdown tip in `README.md`.
+- **Next:** Watch the next CI macOS run for additional bootstrap messaging and fold any new guidance back into the docs.
+- **Remaining:** Ensure clean checkout builds/tests successfully on all target platforms.
 
 ## Phase 1 — Requirements & baseline research
 - **Focus:** Requirements spec and related-work matrix.
-- **Done:** Not started.
-- **Next:** Outline functional/non-functional requirements (target ≥3 pages) and identify data sources for service-time parameters.
+- **Done:** Drafted baseline requirements specification (`requirements.md`) and long-form outline (`thesis/requirements_outline.md`) capturing functional/non-functional targets plus initial parameter source catalog; created initial hardware/workload parameter source log (`profiles/SOURCES.md`); added baseline BlueField-2 hardware profile (`profiles/bf2_default.yaml`) and documented the schema/loader plan (`profiles/README.md`).
+- **Next:** Validate BF2 parameter picks against latest datasheets/blog posts, capture precise citations, and outline the related-work comparison matrix structure with acceptance criteria for each requirement.
 - **Remaining:** Complete related-work comparison matrix; summarize gaps motivating NicLoadOff.
 
 ## Phase 2 — Minimal simulator core
 - **Focus:** Discrete-event engine and initial system model.
-- **Done:** Not started.
-- **Next:** Select event queue structure (calendar queue vs binary heap) and sketch core abstractions (Resource, Task, Flow, Event).
-- **Remaining:** Implement deterministic/stochastic service times, add unit tests, load hardware profile from YAML/JSON.
+- **Done:** Added foundational simulator types (`sim_types.hh`), extended the event queue to track typed metadata, implemented the YAML-backed profile loader with schema validation (plus tests), wired the simulator build/test scaffolding, drafted concrete Resource/Task abstractions with a basic event-queue-driven scheduler (plus coverage), introduced a profile-aware service-time model with deterministic/stochastic sampling (plus integration tests), wired profile-derived resource inventories + multi-stage contention scenarios into the scheduler tests, added workload-spec helpers so tasks are composed from profile-aware stage/resource descriptors, built an ncurses-driven TUI to step simulations, inspect resources, and review recent events, introduced a YAML-backed workload loader (with fixtures/tests) now driving both the scheduler smoke and TUI menus, surfaced loader diagnostics in the TUI, added host/NIC stochastic toggles that re-seed the scheduler on demand, instrumented the scheduler with per-task queue/service metrics, enabled JSON exports straight from the TUI, introduced a reusable run-metrics aggregator now exposed via the scheduler for policy consumers (and exercised by TUI/CLI tooling), exposed a policy-facing state snapshot alongside an initial policy hook interface grounded in the aggregated metrics, wired scheduler-side hook registration with waiting-queue reorder and admission throttling directives (plus regression coverage), surfaced policy selection/telemetry through both the CLI (`--policy`) and ncurses TUI (hotkey cycling with live snapshots), added manifest-driven CLI runs plus automated coverage exercising host/NIC skew policies, codified a latency regression proving NIC-skew policies shrink queue buildup on skewed workloads, finished the workload DAG scaffolding with schema validation, conversion helpers, and regression fixtures/tests, stood up the `TaskDagRuntime` planner with dependency tracking + unit coverage, wired that runtime into both the CLI and TUI loops via a submission controller so DAG workloads release successors dynamically (with regression coverage), added an integrated scheduler regression that mixes DAG-driven releases with profile-derived multi-stage contention to validate queue/metric reporting, introduced a stochastic service-profile regression that locks queue/metric accounting against seeded exponential draws, introduced a heavy-contention regression that saturates host/NIC resources while exercising admission throttles plus waiting-queue reorders, and added a high-variance burst regression that captures simultaneous resource saturation under stochastic service draws with recorded policy snapshots and queue/latency validation.
+- **Next:** Stress admission-limit oscillations under stochastic workloads, ensuring waiting-queue reorder directives remain stable across rapid service-time swings.
+- **Remaining:** Extend scheduler tests to stress stochastic edge cases, high-variance sampling bursts, and extreme resource exhaustion scenarios.
 
 ## Phase 3 — Workload model
 - **Focus:** Task DAGs and baseline workloads.
@@ -40,9 +40,9 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 6 — Hardware profiles & parameters
 - **Focus:** Parameterized BlueField-2/BF3 system models.
-- **Done:** Not started.
-- **Next:** Gather baseline service-time/throughput estimates for BF2.
-- **Remaining:** Encode `bf2_default.yaml`, add contention variance knobs, run sensitivity sweep for MTU effects.
+- **Done:** Seeded BF2 baseline profile (`profiles/bf2_default.yaml`) with sourced parameters and maintained the provenance log (`profiles/SOURCES.md`).
+- **Next:** Gather additional service-time/throughput estimates for BF2 (hash lookup, serialization, PCIe latency variance) and add sensitivity variants (e.g., degraded link, higher MTU).
+- **Remaining:** Expand profiles to cover BF3/DPA drafts, encode contention variance knobs, run sensitivity sweep for MTU effects.
 
 ## Phase 7 — Validation microbenchmarks
 - **Focus:** Trend validation against published data.
@@ -52,8 +52,8 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 8 — Experiment harness
 - **Focus:** CLI runner, output schema, plotting scripts.
-- **Done:** Not started.
-- **Next:** Define CLI contract (`sim run --profile …`) and result schema (CSV/Parquet fields).
+- **Done:** Seeded single-run CLI harness (`nicloadoff_cli`) that emits aggregated JSON metrics for simulator runs, and locked its JSON contract with a regression test.
+- **Next:** Extend the CLI with manifest-driven batch execution and finalize the structured results schema (CSV/Parquet fields).
 - **Remaining:** Implement batch execution, produce reproducible plots (throughput vs λ, latency percentiles).
 
 ## Phase 9 — Core experiments
@@ -78,7 +78,7 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 - **Focus:** Documentation and artifact packaging.
 - **Done:** Not started.
 - **Next:** Draft outline (intro → motivation → design → evaluation → related work → limitations → conclusion).
-- **Remaining:** Produce full draft, finalize figures, prepare reproducibility package and advisor checklist.
+- **Remaining:** Produce full draft, finalize figures, prepare reproducibility package and submission checklist.
 
 ## Deliverables & Success Criteria Snapshot
 - Requirements doc, engine/tests, workload model, observability, policy DSL + policies, BF2 profile, validation plots, experiment harness & results, optional BF3 draft, hardening, thesis & artifacts.

@@ -1,0 +1,6 @@
+add_executable(cli_report_test cli_report_test.cc)
+target_link_libraries(cli_report_test PRIVATE nicloadoff_cli_lib)
+target_compile_features(cli_report_test PRIVATE cxx_std_20)
+target_compile_definitions(cli_report_test PRIVATE NICLOADOFF_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+add_test(NAME cli_report_test COMMAND cli_report_test)

@@ -1,0 +1,55 @@
+schema_version: 0.1
+workload_name: host_nic_pipeline
+description: >
+  Two multi-stage tasks with host and NIC processing; useful for contention studies across devices.
+tasks:
+  - id: 10
+    arrival_time: 0.0
+    stages:
+      - service_profile:
+          key: kv_lookup
+          domain: host
+          mode: deterministic
+        demands:
+          - resource: host_cpu
+            units: 4.0
+          - resource: host_dram
+            units: 32.0
+          - resource: host_link
+            units: 4096.0
+      - service_profile:
+          key: kv_lookup
+          domain: nic
+          mode: deterministic
+        demands:
+          - resource: nic_cpu
+            units: 6.0
+          - resource: nic_dram
+            units: 8.0
+          - resource: nic_link
+            units: 2048.0
+  - id: 11
+    arrival_time: 0.0
+    stages:
+      - service_profile:
+          key: kv_lookup
+          domain: host
+          mode: deterministic
+        demands:
+          - resource: host_cpu
+            units: 4.0
+          - resource: host_dram
+            units: 32.0
+          - resource: host_link
+            units: 4096.0
+      - service_profile:
+          key: kv_lookup
+          domain: nic
+          mode: deterministic
+        demands:
+          - resource: nic_cpu
+            units: 6.0
+          - resource: nic_dram
+            units: 8.0
+          - resource: nic_link
+            units: 2048.0
