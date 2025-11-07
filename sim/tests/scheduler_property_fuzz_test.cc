@@ -1,3 +1,4 @@
+#include "nicloadoff/basic_policy_hooks.hh"
 #include "nicloadoff/policy_state.hh"
 #include "nicloadoff/profile_resources.hh"
 #include "nicloadoff/run_metrics.hh"
@@ -9,6 +10,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <random>
 #include <unordered_set>
 #include <utility>
@@ -84,6 +86,32 @@ double sample_units(std::mt19937_64& rng, double capacity) {
     return std::min(quantized, capacity);
 }
 
+struct PolicyScenario {
+    const char* name{"none"};
+    const char* hook_id{"none"};
+    bool expect_descending_wait{false};
+    bool expect_single_active{false};
+};
+
+struct PolicyObservations {
+    bool descending_observed{false};
+    bool waiting_multi_seen{false};
+    bool admission_limit_seen{false};
+};
+
+std::unique_ptr<nicloadoff::policy::PolicyHook> make_policy(const PolicyScenario& scenario) {
+    return nicloadoff::policy::make_policy_hook(scenario.hook_id);
+}
+
+bool is_descending(const std::vector<nicloadoff::TaskId>& ids) {
+    for (std::size_t i = 1; i < ids.size(); ++i) {
+        if (ids[i - 1] < ids[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 nicloadoff::StageSpec make_random_stage(std::mt19937_64& rng, const ResourceCaps& caps) {
     nicloadoff::StageSpec stage{};
     std::uniform_real_distribution<double> service_dist(0.05, 5.0);
@@ -115,7 +143,9 @@ nicloadoff::StageSpec make_random_stage(std::mt19937_64& rng, const ResourceCaps
     return stage;
 }
 
-void verify_snapshot_invariants(const nicloadoff::PolicyStateSnapshot& snapshot) {
+void verify_snapshot_invariants(const nicloadoff::PolicyStateSnapshot& snapshot,
+                                const PolicyScenario& scenario,
+                                PolicyObservations& observations) {
     for (const auto& resource : snapshot.resources) {
         check(resource.capacity >= 0.0, "resource capacity must be non-negative");
         check(resource.in_use >= -kEpsilon, "resource in use underflow");
@@ -142,6 +172,25 @@ void verify_snapshot_invariants(const nicloadoff::PolicyStateSnapshot& snapshot)
     check(stats.count == snapshot.run_metrics.tasks.size(), "latency stats count mismatch");
     check(stats.sum >= -kEpsilon, "latency stats sum negative");
     check(stats.mean >= -kEpsilon, "latency stats mean negative");
+
+    if (scenario.expect_descending_wait) {
+        if (snapshot.waiting_task_order.size() > 1) {
+            observations.waiting_multi_seen = true;
+            if (is_descending(snapshot.waiting_task_order)) {
+                observations.descending_observed = true;
+            }
+        }
+    }
+    if (scenario.expect_single_active) {
+        if (snapshot.admission_limit.has_value()) {
+            check(snapshot.active_task_count <= *snapshot.admission_limit,
+                  "active task count exceeded admission limit");
+            check(*snapshot.admission_limit <= 1,
+                  "limit-active policy reported unexpected admission limit");
+            observations.admission_limit_seen = true;
+        }
+        check(snapshot.active_task_count <= 1, "limit-active policy exceeded single active task");
+    }
 }
 
 void verify_final_metrics(const nicloadoff::RunMetrics& metrics) {
@@ -162,7 +211,7 @@ void verify_final_metrics(const nicloadoff::RunMetrics& metrics) {
     assert_near(metrics.aggregate.latency_stats.sum, latency_sum, 1e-6);
 }
 
-void run_trial(std::uint64_t seed, int burst_group, const ResourceCaps& caps) {
+void run_trial(std::uint64_t seed, int burst_group, const ResourceCaps& caps, const PolicyScenario& scenario) {
     std::mt19937_64 rng(seed);
     auto profile = make_profile(caps);
     auto inventory = nicloadoff::make_resource_inventory_from_profile(profile);
@@ -191,13 +240,17 @@ void run_trial(std::uint64_t seed, int burst_group, const ResourceCaps& caps) {
 
     auto tasks = nicloadoff::make_tasks_from_spec(workload, inventory.ids);
 
+    auto policy_hook = make_policy(scenario);
     nicloadoff::BasicScheduler scheduler(std::move(inventory.pool));
+    scheduler.set_policy_hook(policy_hook.get());
     for (const auto& task : tasks) {
         scheduler.submit_task(task);
     }
 
     double previous_time = -1.0;
     std::size_t processed_events = 0;
+    PolicyObservations observations{};
+
     while (scheduler.step_once()) {
         ++processed_events;
         const auto event = scheduler.last_event();
@@ -207,7 +260,7 @@ void run_trial(std::uint64_t seed, int burst_group, const ResourceCaps& caps) {
 
         const auto snapshot = scheduler.policy_state_snapshot();
         assert_near(snapshot.current_time, scheduler.current_time(), 1e-9);
-        verify_snapshot_invariants(snapshot);
+        verify_snapshot_invariants(snapshot, scenario, observations);
     }
 
     check(processed_events > 0, "scheduler processed no events");
@@ -227,6 +280,15 @@ void run_trial(std::uint64_t seed, int burst_group, const ResourceCaps& caps) {
 
     check(scheduler.events_processed() == processed_events,
           "events processed count mismatch against step loop");
+
+    if (scenario.expect_descending_wait) {
+        check(!observations.waiting_multi_seen || observations.descending_observed,
+              "descending-id policy never produced a descending waiting queue snapshot");
+    }
+    if (scenario.expect_single_active) {
+        check(observations.admission_limit_seen,
+              "limit-active policy never surfaced an admission directive");
+    }
 }
 
 } // namespace
@@ -236,11 +298,19 @@ int main() {
     const int seed_trials = 16;
     const int burst_groups = 5;
 
+    const std::array<PolicyScenario, 3> scenarios = {
+        PolicyScenario{"none", "none", false, false},
+        PolicyScenario{"descending-id", "descending-id", true, false},
+        PolicyScenario{"limit-active-1", "limit-active-1", false, true},
+    };
+
     std::uint64_t base_seed = 0xBADC0FFEEULL;
     for (int trial = 0; trial < seed_trials; ++trial) {
         std::uint64_t trial_seed = base_seed + static_cast<std::uint64_t>(trial) * 0x9E3779B97F4A7C15ULL;
         for (int burst = 1; burst <= burst_groups; ++burst) {
-            run_trial(trial_seed + static_cast<std::uint64_t>(burst), burst, caps);
+            for (const auto& scenario : scenarios) {
+                run_trial(trial_seed + static_cast<std::uint64_t>(burst), burst, caps, scenario);
+            }
         }
     }
 
