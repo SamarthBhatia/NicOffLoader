@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <memory>
 #include <random>
+#include <string>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -91,6 +92,12 @@ struct PolicyScenario {
     const char* hook_id{"none"};
     bool expect_descending_wait{false};
     bool expect_single_active{false};
+};
+
+struct TrialOptions {
+    int seed_trials{16};
+    int burst_groups{5};
+    bool mix_policies{false};
 };
 
 struct PolicyObservations {
@@ -211,7 +218,10 @@ void verify_final_metrics(const nicloadoff::RunMetrics& metrics) {
     assert_near(metrics.aggregate.latency_stats.sum, latency_sum, 1e-6);
 }
 
-void run_trial(std::uint64_t seed, int burst_group, const ResourceCaps& caps, const PolicyScenario& scenario) {
+void run_trial(std::uint64_t seed,
+               int burst_group,
+               const ResourceCaps& caps,
+               const PolicyScenario& scenario) {
     std::mt19937_64 rng(seed);
     auto profile = make_profile(caps);
     auto inventory = nicloadoff::make_resource_inventory_from_profile(profile);
@@ -295,21 +305,34 @@ void run_trial(std::uint64_t seed, int burst_group, const ResourceCaps& caps, co
 
 int main() {
     const ResourceCaps caps{};
-    const int seed_trials = 16;
-    const int burst_groups = 5;
+    TrialOptions options{};
+    const char* stress_env = std::getenv("NICLOADOFF_FUZZ_STRESS");
+    if (stress_env != nullptr && std::string(stress_env) == "1") {
+        options.seed_trials = 64;
+        options.burst_groups = 8;
+        options.mix_policies = true;
+    }
 
-    const std::array<PolicyScenario, 3> scenarios = {
+    const std::array<PolicyScenario, 3> base_scenarios = {
         PolicyScenario{"none", "none", false, false},
         PolicyScenario{"descending-id", "descending-id", true, false},
         PolicyScenario{"limit-active-1", "limit-active-1", false, true},
     };
 
     std::uint64_t base_seed = 0xBADC0FFEEULL;
-    for (int trial = 0; trial < seed_trials; ++trial) {
+    for (int trial = 0; trial < options.seed_trials; ++trial) {
         std::uint64_t trial_seed = base_seed + static_cast<std::uint64_t>(trial) * 0x9E3779B97F4A7C15ULL;
-        for (int burst = 1; burst <= burst_groups; ++burst) {
-            for (const auto& scenario : scenarios) {
-                run_trial(trial_seed + static_cast<std::uint64_t>(burst), burst, caps, scenario);
+        for (int burst = 1; burst <= options.burst_groups; ++burst) {
+            if (options.mix_policies) {
+                for (int mixed = 0; mixed < static_cast<int>(base_scenarios.size()); ++mixed) {
+                    const auto& scenario = base_scenarios[static_cast<std::size_t>((trial + burst + mixed) %
+                                                                                   base_scenarios.size())];
+                    run_trial(trial_seed + static_cast<std::uint64_t>(burst + mixed * 31), burst, caps, scenario);
+                }
+            } else {
+                for (const auto& scenario : base_scenarios) {
+                    run_trial(trial_seed + static_cast<std::uint64_t>(burst), burst, caps, scenario);
+                }
             }
         }
     }
