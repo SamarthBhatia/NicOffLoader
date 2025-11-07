@@ -98,16 +98,21 @@ Phase 3 introduces a placement benchmark tool that replays the KV/TCP workload t
   --profile profiles/bf2_default.yaml \
   --workload workloads/examples/kv_read_template.yaml \
   --arrival workloads/arrivals/periodic_sweep.yaml \
-  --output placement_kv_periodic.json
+  --arrival-scale 1.5 \
+  --output placement_kv_periodic.json \
+  --csv placement_results.csv
 
 ./build/tools/placement/placement_benchmark \
   --profile profiles/bf2_default.yaml \
   --workload workloads/examples/tcp_split_template.yaml \
   --arrival workloads/arrivals/poisson_bursty.yaml \
-  --output placement_tcp_poisson.json
+  --arrival-scale 0.75 \
+  --output placement_tcp_poisson.json \
+  --csv placement_results.csv
 ```
 
-Each run emits a JSON summary (makespan, throughput, latency aggregates) so we can compare deterministic vs. bursty regimes directly: in our seed run `kv_read_template + periodic_sweep` yielded ~12.5 µs makespan / 240 kops/s, whereas `tcp_split_template + poisson_bursty` stretched to ~55 µs makespan / 36 kops/s with slightly lower mean latency due to larger payloads.
+The optional `--arrival-scale` argument rescales the arrival schedule after it is generated (values >1 tighten inter-arrival gaps, <1 stretches them), letting you sweep background load without editing the YAML fixtures. Each run emits a JSON summary (makespan, throughput, latency aggregates) so we can compare deterministic vs. bursty regimes directly: in our seed run `kv_read_template + periodic_sweep` yielded ~12.5 us makespan / 240 kops/s, whereas `tcp_split_template + poisson_bursty` stretched to ~55 us makespan / 36 kops/s with slightly lower mean latency due to larger payloads.
+Passing `--csv` appends the metrics to a single file, which now feeds the Phase 8 plotting/analysis scripts via `experiments/placement_baseline/run.py` (sweep driver, depends on `pyyaml`) and `plots/placement_baseline.py` (figure generator, depends on `matplotlib`). See `experiments/placement_baseline/README.md` for details.
 
 ### Run a CLI simulation
 Once you have a profile and workload YAML ready, invoke the single-run CLI and optionally select a built-in policy hook:

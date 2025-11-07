@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -22,8 +23,10 @@ struct Options {
     std::filesystem::path workload_path;
     std::filesystem::path arrival_path;
     std::filesystem::path output_path{"placement_results.json"};
+    std::optional<std::filesystem::path> csv_path;
     std::uint64_t seed{1234};
     std::string policy_id{"none"};
+    double arrival_scale{1.0};
 };
 
 struct ArrivalFixture {
@@ -34,7 +37,7 @@ struct ArrivalFixture {
 void print_usage(const char* argv0) {
     std::cerr << "Usage: " << argv0
               << " --profile PROFILE.yaml --workload WORKLOAD.yaml --arrival ARRIVAL.yaml [--output results.json] "
-                 "[--seed N]\n";
+                 "[--csv results.csv] [--seed N] [--arrival-scale SCALE]\n";
 }
 
 bool parse_args(int argc, char** argv, Options& options) {
@@ -58,10 +61,14 @@ bool parse_args(int argc, char** argv, Options& options) {
             options.arrival_path = require_value("--arrival");
         } else if (arg == "--output") {
             options.output_path = require_value("--output");
+        } else if (arg == "--csv") {
+            options.csv_path = require_value("--csv");
         } else if (arg == "--seed") {
             options.seed = std::stoull(require_value("--seed"));
         } else if (arg == "--policy") {
             options.policy_id = require_value("--policy");
+        } else if (arg == "--arrival-scale") {
+            options.arrival_scale = std::stod(require_value("--arrival-scale"));
         } else {
             print_usage(argv[0]);
             return false;
@@ -70,6 +77,9 @@ bool parse_args(int argc, char** argv, Options& options) {
     if (options.profile_path.empty() || options.workload_path.empty() || options.arrival_path.empty()) {
         print_usage(argv[0]);
         return false;
+    }
+    if (options.arrival_scale <= 0.0) {
+        throw std::runtime_error("--arrival-scale must be > 0");
     }
     return true;
 }
@@ -119,6 +129,18 @@ ArrivalFixture load_arrival_fixture(const std::filesystem::path& path, std::uint
         throw std::runtime_error("unknown arrival_model in fixture: " + fixture.model);
     }
     return fixture;
+}
+
+void scale_arrivals(std::vector<nicloadoff::SimTime>& arrivals, double scale) {
+    if (scale == 1.0) {
+        return;
+    }
+    if (scale <= 0.0) {
+        throw std::runtime_error("arrival scale must be > 0");
+    }
+    for (auto& time : arrivals) {
+        time /= scale;
+    }
 }
 
 nicloadoff::WorkloadSpec expand_workload(const nicloadoff::WorkloadSpec& base,
@@ -173,6 +195,7 @@ void write_summary(const std::filesystem::path& output_path,
     out << "  \"profile\": \"" << options.profile_path.filename().string() << "\",\n";
     out << "  \"workload\": \"" << workload_name << "\",\n";
     out << "  \"arrival_model\": \"" << fixture.model << "\",\n";
+    out << "  \"arrival_scale\": " << options.arrival_scale << ",\n";
     out << "  \"arrival_count\": " << fixture.arrivals.size() << ",\n";
     out << "  \"completed_tasks\": " << task_count << ",\n";
     out << "  \"makespan_us\": " << makespan_us << ",\n";
@@ -180,6 +203,39 @@ void write_summary(const std::filesystem::path& output_path,
     out << "  \"total_latency_us\": " << metrics.aggregate.total_latency << ",\n";
     out << "  \"mean_latency_us\": " << mean_latency << "\n";
     out << "}\n";
+}
+
+void append_csv(const std::filesystem::path& csv_path,
+                const Options& options,
+                const ArrivalFixture& fixture,
+                const std::string& workload_name,
+                const nicloadoff::RunMetrics& metrics,
+                nicloadoff::Duration makespan_us) {
+    const bool exists = std::filesystem::exists(csv_path);
+    std::ofstream out(csv_path, std::ios::app);
+    if (!out) {
+        throw std::runtime_error("failed to open csv output: " + csv_path.string());
+    }
+    if (!exists) {
+        out << "profile,workload,arrival_model,arrival_scale,arrival_count,completed_tasks,makespan_us,"
+               "throughput_per_sec,mean_latency_us,total_latency_us,seed\n";
+    }
+    const std::size_t task_count = metrics.tasks.size();
+    const double throughput = compute_throughput(task_count, makespan_us);
+    const double mean_latency =
+        task_count > 0 ? metrics.aggregate.total_latency / static_cast<double>(task_count) : 0.0;
+
+    out << options.profile_path.filename().string() << ","
+        << workload_name << ","
+        << fixture.model << ","
+        << options.arrival_scale << ","
+        << fixture.arrivals.size() << ","
+        << task_count << ","
+        << makespan_us << ","
+        << throughput << ","
+        << mean_latency << ","
+        << metrics.aggregate.total_latency << ","
+        << options.seed << "\n";
 }
 
 } // namespace
@@ -195,7 +251,8 @@ int main(int argc, char** argv) {
             nicloadoff::config::load_profile_from_file(options.profile_path);
         const nicloadoff::LoadedWorkload loaded =
             nicloadoff::load_workload_from_file(options.workload_path);
-        const ArrivalFixture fixture = load_arrival_fixture(options.arrival_path, options.seed);
+        ArrivalFixture fixture = load_arrival_fixture(options.arrival_path, options.seed);
+        scale_arrivals(fixture.arrivals, options.arrival_scale);
         const nicloadoff::WorkloadSpec expanded = expand_workload(loaded.spec, fixture);
 
         auto inventory = nicloadoff::make_resource_inventory_from_profile(profile);
@@ -213,6 +270,9 @@ int main(int argc, char** argv) {
         const nicloadoff::Duration makespan_us = scheduler.current_time();
 
         write_summary(options.output_path, options, fixture, loaded.workload_name, metrics, makespan_us);
+        if (options.csv_path) {
+            append_csv(*options.csv_path, options, fixture, loaded.workload_name, metrics, makespan_us);
+        }
 
         std::cout << "Placement benchmark complete. Results written to "
                   << options.output_path << "\n";

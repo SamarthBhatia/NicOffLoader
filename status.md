@@ -22,9 +22,9 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 3 — Workload model
 - **Focus:** Task DAGs and baseline workloads.
-- **Done:** Documented the YAML workload schema (`workloads/SCHEMA.md`) covering tasks, DAG nodes, instructions/byte hints, and placement metadata referenced by `workload_loader.cc`; added example templates (`workloads/examples/kv_read_template.yaml`, `tcp_split_template.yaml`) exercising the new metadata fields; introduced arrival-model fixtures (`workloads/arrivals/poisson_bursty.yaml`, `periodic_sweep.yaml`) for bursty Poisson and periodic scenarios; implemented the `placement_benchmark` C++ harness (under `tools/placement/`) that replays templates across deterministic vs. bursty arrivals and emits throughput/latency summaries; captured baseline numbers (KV periodic ≈240 kops/s, TCP bursty ≈36 kops/s) to seed the static comparison.
-- **Next:** Extend the benchmark harness with CSV logging + plotting hooks so results feed directly into the Phase 8 experiment pipeline.
-- **Remaining:** Run static placement benchmark for latency/throughput.
+- **Done:** Documented the YAML workload schema (`workloads/SCHEMA.md`) covering tasks, DAG nodes, instructions/byte hints, and placement metadata referenced by `workload_loader.cc`; added example templates (`workloads/examples/kv_read_template.yaml`, `tcp_split_template.yaml`) exercising the new metadata fields; introduced arrival-model fixtures (`workloads/arrivals/poisson_bursty.yaml`, `periodic_sweep.yaml`) for bursty Poisson and periodic scenarios; implemented the `placement_benchmark` C++ harness (under `tools/placement/`) that replays templates across deterministic vs. bursty arrivals and emits throughput/latency summaries; captured baseline numbers (KV periodic ≈240 kops/s, TCP bursty ≈36 kops/s) to seed the static comparison; added an arrival-scaling knob plus `experiments/placement_baseline` (manifest + sweep driver) and `plots/placement_baseline.py` so benchmark CSVs immediately feed the plotting pipeline.
+- **Next:** Layer DAG-heavy workloads and policy-aware placement hints into the static benchmark so we can contrast host vs. NIC pinning under dependency pressure.
+- **Remaining:** Extend the static placement benchmark to report percentile latency/queue depth alongside throughput for each workload.
 
 ## Phase 4 — Observability + state API
 - **Focus:** Expose runtime metrics for policies.
@@ -52,9 +52,9 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 8 — Experiment harness
 - **Focus:** CLI runner, output schema, plotting scripts.
-- **Done:** Seeded single-run CLI harness (`nicloadoff_cli`) that emits aggregated JSON metrics for simulator runs, and locked its JSON contract with a regression test.
-- **Next:** Extend the CLI with manifest-driven batch execution and finalize the structured results schema (CSV/Parquet fields).
-- **Remaining:** Implement batch execution, produce reproducible plots (throughput vs λ, latency percentiles).
+- **Done:** Seeded single-run CLI harness (`nicloadoff_cli`) that emits aggregated JSON metrics for simulator runs, locked its JSON contract with a regression test, and now ships an experiment/pipeline pairing (`experiments/placement_baseline/run.py` + `plots/placement_baseline.py`) that sweeps arrival scales and renders throughput/latency figures straight from the placement benchmark CSV.
+- **Next:** Share the sweep machinery with `nicloadoff_cli` so policy experiments consume the same manifest format and emit consistent CSV/Parquet artifacts.
+- **Remaining:** Implement manifest-driven batch execution for CLI runs, produce reproducible plots (throughput vs lambda, latency percentiles), and archive results under `experiments/results/`.
 
 ## Phase 9 — Core experiments
 - **Focus:** Policy comparison matrix and reporting.
