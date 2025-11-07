@@ -77,7 +77,18 @@ cmake --build build
 ctest --test-dir build
 ```
 
+The `scheduler_property_fuzz_test` target now sweeps multiple policy hooks to enforce resource/timeline invariants. It is included automatically when you run `ctest --test-dir build` (≈0.1 s on CI). For a heavier local sweep, export `NICLOADOFF_FUZZ_STRESS=1` before invoking `ctest` to enable higher seed/burst counts and intra-trial policy mixing (~0.7 s on a laptop).
+
 The initial smoke test exercises the placeholder event queue implementation; expand the suite as simulator modules arrive.
+
+### Pre-PR checklist
+Before opening a pull request, please run:
+
+1. `cmake --build build`
+2. `ctest --test-dir build --output-on-failure`
+3. `NICLOADOFF_FUZZ_STRESS=1 ctest --test-dir build -R scheduler_property_fuzz_test`
+
+This ensures both the default and stress-mode fuzz harness sweeps stay green alongside the rest of the simulator suite.
 
 ### Run a CLI simulation
 Once you have a profile and workload YAML ready, invoke the single-run CLI and optionally select a built-in policy hook:
