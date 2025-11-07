@@ -22,8 +22,8 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 3 — Workload model
 - **Focus:** Task DAGs and baseline workloads.
-- **Done:** Documented the YAML workload schema (`workloads/SCHEMA.md`) covering tasks, DAG nodes, instructions/byte hints, and placement metadata referenced by `workload_loader.cc`.
-- **Next:** Implement KV read template, optional TCP split, and add arrival-model fixtures using the new schema.
+- **Done:** Documented the YAML workload schema (`workloads/SCHEMA.md`) covering tasks, DAG nodes, instructions/byte hints, and placement metadata referenced by `workload_loader.cc`; added example templates (`workloads/examples/kv_read_template.yaml`, `tcp_split_template.yaml`) exercising the new metadata fields; introduced arrival-model fixtures (`workloads/arrivals/poisson_bursty.yaml`, `periodic_sweep.yaml`) for bursty Poisson and periodic scenarios; implemented the `placement_benchmark` C++ harness (under `tools/placement/`) that replays templates across deterministic vs. bursty arrivals and emits throughput/latency summaries; captured baseline numbers (KV periodic ≈240 kops/s, TCP bursty ≈36 kops/s) to seed the static comparison.
+- **Next:** Extend the benchmark harness with CSV logging + plotting hooks so results feed directly into the Phase 8 experiment pipeline.
 - **Remaining:** Run static placement benchmark for latency/throughput.
 
 ## Phase 4 — Observability + state API

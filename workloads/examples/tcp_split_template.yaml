@@ -1,0 +1,36 @@
+schema_version: 0.1
+workload_name: tcp_split_template
+description: >
+  Illustrates a TCP split workflow: host handles control-plane handshake while the NIC services
+  data-plane transfers. Control/data tasks use placement hints so policies can keep the split stable.
+tasks:
+  - id: 10
+    arrival_time: 0.0
+    instructions: 1.0e7
+    bytes_in: 512
+    bytes_out: 512
+    placement_hint: host_control
+    stages:
+      - deterministic_service_time: 1.5
+        demands:
+          - resource: host_cpu
+            units: 1.0
+          - resource: host_dram
+            units: 0.2
+  - id: 11
+    arrival_time: 0.1
+    instructions: 4.0e7
+    bytes_in: 32768
+    bytes_out: 32768
+    placement_hint: nic_data
+    stages:
+      - deterministic_service_time: 0.5
+        demands:
+          - resource: host_cpu
+            units: 0.2
+      - deterministic_service_time: 3.0
+        demands:
+          - resource: nic_cpu
+            units: 1.5
+          - resource: nic_link
+            units: 32768.0

@@ -77,7 +77,37 @@ cmake --build build
 ctest --test-dir build
 ```
 
+The `scheduler_property_fuzz_test` target now sweeps multiple policy hooks to enforce resource/timeline invariants. It is included automatically when you run `ctest --test-dir build` (≈0.1 s on CI). For a heavier local sweep, export `NICLOADOFF_FUZZ_STRESS=1` before invoking `ctest` to enable higher seed/burst counts and intra-trial policy mixing (~0.7 s on a laptop).
+
 The initial smoke test exercises the placeholder event queue implementation; expand the suite as simulator modules arrive.
+
+### Pre-PR checklist
+Before opening a pull request, please run:
+
+1. `cmake --build build`
+2. `ctest --test-dir build --output-on-failure`
+3. `NICLOADOFF_FUZZ_STRESS=1 ctest --test-dir build -R scheduler_property_fuzz_test`
+
+This ensures both the default and stress-mode fuzz harness sweeps stay green alongside the rest of the simulator suite.
+
+### Static placement benchmark harness
+Phase 3 introduces a placement benchmark tool that replays the KV/TCP workload templates under deterministic and bursty arrivals. Example invocations:
+
+```bash
+./build/tools/placement/placement_benchmark \
+  --profile profiles/bf2_default.yaml \
+  --workload workloads/examples/kv_read_template.yaml \
+  --arrival workloads/arrivals/periodic_sweep.yaml \
+  --output placement_kv_periodic.json
+
+./build/tools/placement/placement_benchmark \
+  --profile profiles/bf2_default.yaml \
+  --workload workloads/examples/tcp_split_template.yaml \
+  --arrival workloads/arrivals/poisson_bursty.yaml \
+  --output placement_tcp_poisson.json
+```
+
+Each run emits a JSON summary (makespan, throughput, latency aggregates) so we can compare deterministic vs. bursty regimes directly: in our seed run `kv_read_template + periodic_sweep` yielded ~12.5 µs makespan / 240 kops/s, whereas `tcp_split_template + poisson_bursty` stretched to ~55 µs makespan / 36 kops/s with slightly lower mean latency due to larger payloads.
 
 ### Run a CLI simulation
 Once you have a profile and workload YAML ready, invoke the single-run CLI and optionally select a built-in policy hook:

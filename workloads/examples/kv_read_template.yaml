@@ -1,0 +1,31 @@
+schema_version: 0.1
+workload_name: kv_read_template
+description: >
+  Two-stage KV read where the host parses incoming requests and the NIC performs the lookup
+  before the host formats the response. Includes instructions/bytes metadata and placement hints.
+tasks:
+  - id: 1
+    arrival_time: 0.0
+    instructions: 2.0e7
+    bytes_in: 2048
+    bytes_out: 512
+    placement_hint: either
+    stages:
+      - deterministic_service_time: 1.2
+        demands:
+          - resource: host_cpu
+            units: 1.0
+          - resource: host_dram
+            units: 0.5
+      - deterministic_service_time: 2.0
+        demands:
+          - resource: nic_cpu
+            units: 1.0
+          - resource: nic_dram
+            units: 0.5
+      - deterministic_service_time: 0.8
+        demands:
+          - resource: host_cpu
+            units: 0.5
+          - resource: host_link
+            units: 2048.0

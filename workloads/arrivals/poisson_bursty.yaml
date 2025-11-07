@@ -1,0 +1,11 @@
+schema_version: 0.1
+arrival_model: poisson_bursty
+description: >
+  Bursty Poisson arrivals with alternating low/high intensity windows (Phase 3 fixture).
+windows:
+  - duration_us: 50.0
+    rate_per_us: 0.02
+  - duration_us: 50.0
+    rate_per_us: 0.05
+  - duration_us: 25.0
+    rate_per_us: 0.01
