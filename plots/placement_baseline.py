@@ -16,7 +16,7 @@ except ImportError as exc:  # pragma: no cover - dependency hint
 
 
 Record = Dict[str, float]
-GroupKey = Tuple[str, str]
+GroupKey = Tuple[str, str, str]
 
 
 def load_records(csv_path: pathlib.Path) -> Dict[GroupKey, List[Record]]:
@@ -38,7 +38,8 @@ def load_records(csv_path: pathlib.Path) -> Dict[GroupKey, List[Record]]:
                 "latency_p99": float(row.get("latency_p99_us", row["mean_latency_us"])),
                 "queue_depth": float(row.get("peak_waiting_queue_depth", 0.0)),
             }
-            key: GroupKey = (row["workload"], row["arrival_model"])
+            placement = row.get("placement_mode", "hint_respect")
+            key: GroupKey = (row["workload"], row["arrival_model"], placement)
             groups[key].append(record)
 
     for records in groups.values():
@@ -52,13 +53,13 @@ def plot(groups: Dict[GroupKey, List[Record]], output_path: pathlib.Path) -> Non
     throughput_axis, mean_axis = axes[0]
     p95_axis, queue_axis = axes[1]
 
-    for (workload, arrival_model), records in sorted(groups.items()):
+    for (workload, arrival_model, placement), records in sorted(groups.items()):
         scales = [rec["arrival_scale"] for rec in records]
         throughput = [rec["throughput"] for rec in records]
         mean_latency = [rec["mean_latency"] for rec in records]
         p95_latency = [rec["latency_p95"] for rec in records]
         queue_depth = [rec["queue_depth"] for rec in records]
-        label = f"{workload} ({arrival_model})"
+        label = f"{workload} ({arrival_model}, {placement})"
         throughput_axis.plot(scales, throughput, marker="o", label=label)
         mean_axis.plot(scales, mean_latency, marker="o", label=label)
         p95_axis.plot(scales, p95_latency, marker="o", label=label)

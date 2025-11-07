@@ -3,20 +3,31 @@
   "binary": "build/tools/placement/placement_benchmark",
   "csv_path": "experiments/placement_baseline/results/placement_sweep.csv",
   "results_dir": "experiments/placement_baseline/results",
+  "placement_modes": ["hint_respect"],
   "workloads": [
     {
       "name": "kv_read_periodic",
       "workload": "workloads/examples/kv_read_template.yaml",
       "arrival": "workloads/arrivals/periodic_sweep.yaml",
       "arrival_scales": [0.5, 1.0, 1.5, 2.0],
-      "seeds": [1]
+      "seeds": [1],
+      "placement_modes": ["hint_respect"]
     },
     {
       "name": "tcp_split_poisson",
       "workload": "workloads/examples/tcp_split_template.yaml",
       "arrival": "workloads/arrivals/poisson_bursty.yaml",
       "arrival_scales": [0.5, 1.0, 1.5],
-      "seeds": [1]
+      "seeds": [1],
+      "placement_modes": ["hint_respect"]
+    },
+    {
+      "name": "skew_dag_arrival",
+      "workload": "workloads/examples/skew_dag.yaml",
+      "arrival": "workloads/arrivals/poisson_bursty.yaml",
+      "arrival_scales": [1.0],
+      "seeds": [1],
+      "placement_modes": ["host_pinned", "nic_pinned"]
     }
   ]
 }

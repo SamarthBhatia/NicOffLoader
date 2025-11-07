@@ -33,6 +33,10 @@ BASE_COLUMNS = [
     "p99_latency_us",
     "peak_waiting_queue_depth",
     "output_path",
+    "arrival_model",
+    "background_load",
+    "placement",
+    "workload_label",
 ]
 
 NUMERIC_FIELDS = [

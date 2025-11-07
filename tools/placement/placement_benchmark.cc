@@ -1,3 +1,4 @@
+#include "nicloadoff/dag_submission_controller.hh"
 #include "nicloadoff/profile.hh"
 #include "nicloadoff/profile_resources.hh"
 #include "nicloadoff/run_metrics.hh"
@@ -7,6 +8,8 @@
 
 #include "yaml-cpp/yaml.h"
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -18,6 +21,40 @@
 
 namespace {
 
+enum class PlacementMode { kHintRespect, kHostPinned, kNicPinned };
+
+[[nodiscard]] std::string to_lower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
+[[nodiscard]] PlacementMode placement_mode_from_string(std::string value) {
+    value = to_lower(value);
+    if (value == "host_pinned") {
+        return PlacementMode::kHostPinned;
+    }
+    if (value == "nic_pinned") {
+        return PlacementMode::kNicPinned;
+    }
+    if (value == "hint_respect") {
+        return PlacementMode::kHintRespect;
+    }
+    throw std::runtime_error("unknown placement mode: " + value);
+}
+
+[[nodiscard]] std::string placement_mode_to_string(PlacementMode mode) {
+    switch (mode) {
+    case PlacementMode::kHostPinned:
+        return "host_pinned";
+    case PlacementMode::kNicPinned:
+        return "nic_pinned";
+    case PlacementMode::kHintRespect:
+        return "hint_respect";
+    }
+    return "unknown";
+}
+
 struct Options {
     std::filesystem::path profile_path;
     std::filesystem::path workload_path;
@@ -27,6 +64,7 @@ struct Options {
     std::uint64_t seed{1234};
     std::string policy_id{"none"};
     double arrival_scale{1.0};
+    PlacementMode placement_mode{PlacementMode::kHintRespect};
 };
 
 struct ArrivalFixture {
@@ -37,7 +75,7 @@ struct ArrivalFixture {
 void print_usage(const char* argv0) {
     std::cerr << "Usage: " << argv0
               << " --profile PROFILE.yaml --workload WORKLOAD.yaml --arrival ARRIVAL.yaml [--output results.json] "
-                 "[--csv results.csv] [--seed N] [--arrival-scale SCALE]\n";
+                 "[--csv results.csv] [--seed N] [--arrival-scale SCALE] [--placement-mode MODE]\n";
 }
 
 bool parse_args(int argc, char** argv, Options& options) {
@@ -69,6 +107,8 @@ bool parse_args(int argc, char** argv, Options& options) {
             options.policy_id = require_value("--policy");
         } else if (arg == "--arrival-scale") {
             options.arrival_scale = std::stod(require_value("--arrival-scale"));
+        } else if (arg == "--placement-mode") {
+            options.placement_mode = placement_mode_from_string(require_value("--placement-mode"));
         } else {
             print_usage(argv[0]);
             return false;
@@ -145,14 +185,12 @@ void scale_arrivals(std::vector<nicloadoff::SimTime>& arrivals, double scale) {
 
 nicloadoff::WorkloadSpec expand_workload(const nicloadoff::WorkloadSpec& base,
                                          const ArrivalFixture& fixture) {
-    if (!base.dag_tasks.empty()) {
-        throw std::runtime_error("placement benchmark currently expects task-based workloads only");
-    }
-    if (base.tasks.empty()) {
+    if (base.tasks.empty() && base.dag_tasks.empty()) {
         throw std::runtime_error("workload has no tasks to replicate");
     }
-    nicloadoff::WorkloadSpec expanded = base;
-    expanded.tasks.clear();
+    nicloadoff::WorkloadSpec expanded;
+    expanded.tasks.reserve(base.tasks.size() * fixture.arrivals.size());
+    expanded.dag_tasks.reserve(base.dag_tasks.size() * fixture.arrivals.size());
 
     const std::uint64_t id_stride = 1'000'000;
     for (std::size_t idx = 0; idx < fixture.arrivals.size(); ++idx) {
@@ -164,8 +202,115 @@ nicloadoff::WorkloadSpec expand_workload(const nicloadoff::WorkloadSpec& base,
             copy.arrival_time = arrival_offset + task.arrival_time;
             expanded.tasks.push_back(std::move(copy));
         }
+        for (const auto& dag : base.dag_tasks) {
+            nicloadoff::TaskDAGSpec dag_copy = dag;
+            dag_copy.id = dag.id + base_offset;
+            dag_copy.arrival_time = arrival_offset + dag.arrival_time;
+            expanded.dag_tasks.push_back(std::move(dag_copy));
+        }
     }
     return expanded;
+}
+
+enum class StagePlacement { kNone, kHost, kNic };
+
+[[nodiscard]] bool allows_placement(const nicloadoff::StageSpec& stage, StagePlacement placement) {
+    if (placement == StagePlacement::kNone) {
+        return true;
+    }
+    if (stage.placement_eligible.empty()) {
+        return true;
+    }
+    const std::string target = (placement == StagePlacement::kHost) ? "host" : "nic";
+    return std::find(stage.placement_eligible.begin(), stage.placement_eligible.end(), target) !=
+           stage.placement_eligible.end();
+}
+
+[[nodiscard]] StagePlacement placement_from_hint(const nicloadoff::StageSpec& stage) {
+    if (!stage.placement_default) {
+        return StagePlacement::kNone;
+    }
+    const std::string value = to_lower(*stage.placement_default);
+    if (value == "host") {
+        return StagePlacement::kHost;
+    }
+    if (value == "nic") {
+        return StagePlacement::kNic;
+    }
+    return StagePlacement::kNone;
+}
+
+[[nodiscard]] StagePlacement choose_stage_placement(const nicloadoff::StageSpec& stage, PlacementMode mode) {
+    switch (mode) {
+    case PlacementMode::kHostPinned:
+        return allows_placement(stage, StagePlacement::kHost) ? StagePlacement::kHost : StagePlacement::kNone;
+    case PlacementMode::kNicPinned:
+        return allows_placement(stage, StagePlacement::kNic) ? StagePlacement::kNic : StagePlacement::kNone;
+    case PlacementMode::kHintRespect: {
+        StagePlacement hinted = placement_from_hint(stage);
+        if (hinted != StagePlacement::kNone && allows_placement(stage, hinted)) {
+            return hinted;
+        }
+        return StagePlacement::kNone;
+    }
+    }
+    return StagePlacement::kNone;
+}
+
+nicloadoff::ResourceClass remap_resource(nicloadoff::ResourceClass resource, StagePlacement placement) {
+    if (placement == StagePlacement::kHost) {
+        switch (resource) {
+        case nicloadoff::ResourceClass::kNicCpu:
+            return nicloadoff::ResourceClass::kHostCpu;
+        case nicloadoff::ResourceClass::kNicDram:
+            return nicloadoff::ResourceClass::kHostDram;
+        case nicloadoff::ResourceClass::kNicLink:
+            return nicloadoff::ResourceClass::kHostLink;
+        default:
+            break;
+        }
+    } else if (placement == StagePlacement::kNic) {
+        switch (resource) {
+        case nicloadoff::ResourceClass::kHostCpu:
+            return nicloadoff::ResourceClass::kNicCpu;
+        case nicloadoff::ResourceClass::kHostDram:
+            return nicloadoff::ResourceClass::kNicDram;
+        case nicloadoff::ResourceClass::kHostLink:
+            return nicloadoff::ResourceClass::kNicLink;
+        default:
+            break;
+        }
+    }
+    return resource;
+}
+
+void apply_stage_placement(nicloadoff::StageSpec& stage, StagePlacement placement) {
+    if (placement == StagePlacement::kNone) {
+        return;
+    }
+    if (stage.service_profile) {
+        stage.service_profile->domain =
+            (placement == StagePlacement::kNic) ? nicloadoff::ServiceTimeDomain::kNic
+                                                : nicloadoff::ServiceTimeDomain::kHost;
+    }
+    for (auto& demand : stage.demands) {
+        demand.resource = remap_resource(demand.resource, placement);
+    }
+}
+
+void apply_placement_mode(nicloadoff::WorkloadSpec& spec, PlacementMode mode) {
+    for (auto& task : spec.tasks) {
+        for (auto& stage : task.stages) {
+            StagePlacement choice = choose_stage_placement(stage, mode);
+            apply_stage_placement(stage, choice);
+        }
+    }
+    for (auto& dag : spec.dag_tasks) {
+        for (auto& node : dag.nodes) {
+            StagePlacement choice = choose_stage_placement(node.stage, mode);
+            apply_stage_placement(node.stage, choice);
+        }
+    }
 }
 
 double compute_throughput(std::size_t task_count, nicloadoff::Duration makespan_us) {
@@ -195,6 +340,7 @@ void write_summary(const std::filesystem::path& output_path,
     out << "  \"workload\": \"" << workload_name << "\",\n";
     out << "  \"arrival_model\": \"" << fixture.model << "\",\n";
     out << "  \"arrival_scale\": " << options.arrival_scale << ",\n";
+    out << "  \"placement_mode\": \"" << placement_mode_to_string(options.placement_mode) << "\",\n";
     out << "  \"arrival_count\": " << fixture.arrivals.size() << ",\n";
     out << "  \"completed_tasks\": " << task_count << ",\n";
     out << "  \"makespan_us\": " << makespan_us << ",\n";
@@ -220,9 +366,9 @@ void append_csv(const std::filesystem::path& csv_path,
         throw std::runtime_error("failed to open csv output: " + csv_path.string());
     }
     if (!exists) {
-        out << "profile,workload,arrival_model,arrival_scale,arrival_count,completed_tasks,makespan_us,"
-               "throughput_per_sec,mean_latency_us,latency_p50_us,latency_p95_us,latency_p99_us,total_latency_us,"
-               "peak_waiting_queue_depth,seed\n";
+        out << "profile,workload,arrival_model,arrival_scale,placement_mode,arrival_count,completed_tasks,"
+               "makespan_us,throughput_per_sec,mean_latency_us,latency_p50_us,latency_p95_us,latency_p99_us,"
+               "total_latency_us,peak_waiting_queue_depth,seed\n";
     }
     const std::size_t task_count = metrics.tasks.size();
     const double throughput = compute_throughput(task_count, makespan_us);
@@ -232,6 +378,7 @@ void append_csv(const std::filesystem::path& csv_path,
         << workload_name << ","
         << fixture.model << ","
         << options.arrival_scale << ","
+        << placement_mode_to_string(options.placement_mode) << ","
         << fixture.arrivals.size() << ","
         << task_count << ","
         << makespan_us << ","
@@ -260,18 +407,30 @@ int main(int argc, char** argv) {
             nicloadoff::load_workload_from_file(options.workload_path);
         ArrivalFixture fixture = load_arrival_fixture(options.arrival_path, options.seed);
         scale_arrivals(fixture.arrivals, options.arrival_scale);
-        const nicloadoff::WorkloadSpec expanded = expand_workload(loaded.spec, fixture);
+        nicloadoff::WorkloadSpec expanded = expand_workload(loaded.spec, fixture);
+        apply_placement_mode(expanded, options.placement_mode);
 
         auto inventory = nicloadoff::make_resource_inventory_from_profile(profile);
         nicloadoff::ServiceTimeModel service_model(profile, options.seed);
         nicloadoff::BasicScheduler scheduler(std::move(inventory.pool), &service_model);
-        const std::vector<nicloadoff::Task> tasks =
-            nicloadoff::make_tasks_from_spec(expanded, inventory.ids);
+        nicloadoff::DagSubmissionController dag_controller =
+            nicloadoff::DagSubmissionController::from_spec(expanded, inventory.ids);
+        const std::vector<nicloadoff::Task> tasks = nicloadoff::make_tasks_from_spec(expanded, inventory.ids);
 
         for (const auto& task : tasks) {
             scheduler.submit_task(task);
         }
-        scheduler.run_until_empty();
+        if (!dag_controller.empty()) {
+            dag_controller.submit_initial(scheduler);
+        }
+        while (scheduler.step_once()) {
+            if (!dag_controller.empty()) {
+                if (auto last = scheduler.last_event();
+                    last && last->metadata.type == nicloadoff::EventType::kTaskComplete) {
+                    dag_controller.handle_task_completion(last->metadata.id, scheduler.current_time(), scheduler);
+                }
+            }
+        }
 
         const nicloadoff::RunMetrics metrics = scheduler.aggregated_metrics();
         const nicloadoff::Duration makespan_us = scheduler.current_time();

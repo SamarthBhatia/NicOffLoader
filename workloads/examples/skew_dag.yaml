@@ -1,27 +1,98 @@
 schema_version: 0.1
 workload_name: skew_dag
 description: >
-  Minimal DAG workload with an explicit host entry node and NIC-heavy successor stage.
+  Skinny–wide–skinny DAG modeling a KV read path with a skewed lookup stage.
+  parse_req and hash_key fan into a dominant db_lookup node (skewable via service_profile),
+  while auth_check joins before serialize_resp to stress dependency pressure.
 tasks:
-  - id: 501
+  - id: 900
     arrival_time: 0.0
     dag:
       nodes:
-        - name: host_entry
+        - name: parse_req
           stage:
-            deterministic_service_time: 10.0
+            deterministic_service_time: 0.8
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            instructions: 1.5e7
+            bytes_in: 2048
+            bytes_out: 1536
             demands:
               - resource: host_cpu
-                units: 1.0
+                units: 0.6
+              - resource: host_dram
+                units: 0.2
           successors:
-            - nic_stage
-        - name: nic_stage
+            - hash_key
+            - auth_check
+        - name: hash_key
           stage:
             deterministic_service_time: 1.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            instructions: 2.0e7
+            bytes_in: 1536
+            bytes_out: 512
             demands:
               - resource: host_cpu
-                units: 0.1
-              - resource: nic_cpu
+                units: 0.8
+          successors:
+            - db_lookup
+        - name: db_lookup
+          stage:
+            service_profile:
+              key: kv_lookup
+              domain: host
+              mode: stochastic
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            instructions: 6.0e7
+            bytes_in: 2048
+            bytes_out: 6144
+            demands:
+              - resource: host_cpu
                 units: 1.5
-      entry:
-        - host_entry
+              - resource: host_dram
+                units: 2.0
+              - resource: host_link
+                units: 8192
+          successors:
+            - serialize_resp
+        - name: auth_check
+          stage:
+            deterministic_service_time: 0.6
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            instructions: 0.5e7
+            bytes_in: 512
+            bytes_out: 512
+            demands:
+              - resource: host_cpu
+                units: 0.4
+          successors:
+            - serialize_resp
+        - name: serialize_resp
+          stage:
+            deterministic_service_time: 0.9
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            instructions: 1.0e7
+            bytes_in: 6144
+            bytes_out: 2048
+            demands:
+              - resource: host_cpu
+                units: 0.7
+              - resource: host_dram
+                units: 0.3
+      entry_points:
+        - parse_req

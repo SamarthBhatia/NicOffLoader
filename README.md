@@ -91,7 +91,7 @@ Before opening a pull request, please run:
 This ensures both the default and stress-mode fuzz harness sweeps stay green alongside the rest of the simulator suite.
 
 ### Static placement benchmark harness
-Phase 3 introduces a placement benchmark tool that replays the KV/TCP workload templates under deterministic and bursty arrivals. Example invocations:
+Phase 3 introduces a placement benchmark tool that replays the KV/TCP (and now skewed DAG) workload templates under deterministic and bursty arrivals. Example invocations:
 
 ```bash
 ./build/tools/placement/placement_benchmark \
@@ -107,11 +107,20 @@ Phase 3 introduces a placement benchmark tool that replays the KV/TCP workload t
   --workload workloads/examples/tcp_split_template.yaml \
   --arrival workloads/arrivals/poisson_bursty.yaml \
   --arrival-scale 0.75 \
+  --placement-mode hint_respect \
   --output placement_tcp_poisson.json \
+  --csv placement_results.csv
+
+./build/tools/placement/placement_benchmark \
+  --profile profiles/bf2_default.yaml \
+  --workload workloads/examples/skew_dag.yaml \
+  --arrival workloads/arrivals/poisson_bursty.yaml \
+  --placement-mode host_pinned \
+  --output placement_skewdag_host.json \
   --csv placement_results.csv
 ```
 
-The optional `--arrival-scale` argument rescales the arrival schedule after it is generated (values >1 tighten inter-arrival gaps, <1 stretches them), letting you sweep background load without editing the YAML fixtures. Each run emits a JSON summary (makespan, throughput, latency aggregates) so we can compare deterministic vs. bursty regimes directly: in our seed run `kv_read_template + periodic_sweep` yielded ~12.5 us makespan / 240 kops/s, whereas `tcp_split_template + poisson_bursty` stretched to ~55 us makespan / 36 kops/s with slightly lower mean latency due to larger payloads.
+The optional `--arrival-scale` argument rescales the arrival schedule after it is generated (values >1 tighten inter-arrival gaps, <1 stretches them), letting you sweep background load without editing the YAML fixtures. The new `--placement-mode` flag toggles static placement strategies (`hint_respect`, `host_pinned`, or `nic_pinned`) so you can compare host-vs-NIC execution on identical arrivals; the manifest-driven sweep exercises both modes for the skinny–wide–skinny `skew_dag` workload. Each run emits a JSON summary (makespan, throughput, latency aggregates) so we can compare deterministic vs. bursty regimes directly: in our seed run `kv_read_template + periodic_sweep` yielded ~12.5 us makespan / 240 kops/s, whereas `tcp_split_template + poisson_bursty` stretched to ~55 us makespan / 36 kops/s with slightly lower mean latency due to larger payloads.
 Passing `--csv` appends the metrics to a single file, which now feeds the Phase 8 plotting/analysis scripts via `experiments/placement_baseline/run.py` (sweep driver; uses PyYAML when available but falls back to JSON-compatible manifests) and `plots/placement_baseline.py` (figure generator, depends on `matplotlib`). The CSV/JSON rows also capture latency percentiles (p50/p95/p99) and the peak waiting-queue depth to make queue buildup obvious in downstream plots. See `experiments/placement_baseline/README.md` for details.
 
 ### Run a CLI simulation

@@ -48,13 +48,17 @@ tasks:
 
 ### Stage fields
 
-| Field                        | Type   | Required | Notes |
-| ---------------------------- | ------ | -------- | ----- |
-| `deterministic_service_time` | float  | ✖†       | Microseconds; required when no service profile is provided. |
-| `service_profile.key`        | string | ✖†       | Reference into the profile service-time overrides. |
-| `service_profile.domain`     | enum   | ✖        | `host` or `nic`. |
-| `service_profile.mode`       | enum   | ✖        | `deterministic` or `stochastic`. |
-| `demands`                    | list   | ✔        | Resource requirements per stage. |
+| Field                        | Type     | Required | Notes |
+| ---------------------------- | -------- | -------- | ----- |
+| `deterministic_service_time` | float    | ✖†       | Microseconds; required when no service profile is provided. |
+| `service_profile.key`        | string   | ✖†       | Reference into the profile service-time overrides. |
+| `service_profile.domain`     | enum     | ✖        | `host` or `nic`. |
+| `service_profile.mode`       | enum     | ✖        | `deterministic` or `stochastic`. |
+| `demands`                    | list     | ✔        | Resource requirements per stage. |
+| `placement_default`          | string   | ✖        | Preferred placement (`host`, `nic`, or `either`). |
+| `placement_eligible`         | string[] | ✖        | Explicit allowlist of placements (`["host","nic"]`). |
+| `instructions`               | float    | ✖        | Optional instruction-count hint (used by policy/batch tooling). |
+| `bytes_in/out`               | float    | ✖        | Optional ingress/egress payload hints. |
 
 †Exactly one of `deterministic_service_time` or `service_profile` must be provided. The loader enforces this constraint.
 
@@ -85,4 +89,4 @@ Each `node.stage` follows the same schema as a task stage. `successors` enumerat
 * at least one entry point
 * no cycles and every node reachable from an entry point
 
-Optional metadata (`instructions`, `bytes_in/out`, `placement_hint`) can be attached to DAG nodes by placing those keys alongside the `stage` block. These hints are preserved in the generated `TaskDagNode` and will feed future Phase 3 policy logic.
+Optional metadata (`instructions`, `bytes_in/out`, `placement_default`, `placement_eligible`) can be attached to DAG nodes by placing those keys alongside the `stage` block. These hints are preserved in the generated `TaskDagNode`, enabling static placement experiments (Phase 3) and future policy logic.

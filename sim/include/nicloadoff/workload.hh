@@ -31,6 +31,11 @@ struct StageSpec {
     std::optional<Duration> deterministic_service_time;
     std::optional<ServiceTimeProfileRef> service_profile;
     std::vector<StageResourceDemand> demands;
+    std::optional<std::string> placement_default;
+    std::vector<std::string> placement_eligible;
+    std::optional<double> instructions;
+    std::optional<double> bytes_in;
+    std::optional<double> bytes_out;
 };
 
 struct TaskSpec {

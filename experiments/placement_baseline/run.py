@@ -56,34 +56,40 @@ def run_sweep(manifest: Dict[str, Any], binary: pathlib.Path, append: bool) -> N
 
     workloads = manifest["workloads"]
     default_seeds = _as_list(manifest.get("seeds"), [manifest.get("seed", 1)])
+    default_placements = _as_list(manifest.get("placement_modes"), ["hint_respect"])
 
     for scenario in workloads:
         scenario_name = scenario.get("name") or pathlib.Path(scenario["workload"]).stem
         seeds = _as_list(scenario.get("seeds"), default_seeds)
         scales = [float(scale) for scale in _as_list(scenario.get("arrival_scales"), [1.0])]
+        placements = _as_list(scenario.get("placement_modes"), default_placements)
         for scale in scales:
-            for seed in seeds:
-                output_path = results_dir / f"{scenario_name}_scale-{scale}_seed-{seed}.json"
-                cmd = [
-                    str(binary),
-                    "--profile",
+            for placement_mode in placements:
+                for seed in seeds:
+                    safe_mode = placement_mode.replace("/", "-")
+                    output_path = results_dir / f"{scenario_name}_mode-{safe_mode}_scale-{scale}_seed-{seed}.json"
+                    cmd = [
+                        str(binary),
+                        "--profile",
                     profile,
                     "--workload",
                     scenario["workload"],
                     "--arrival",
                     scenario["arrival"],
-                    "--arrival-scale",
-                    str(scale),
-                    "--seed",
-                    str(seed),
-                    "--output",
+                        "--arrival-scale",
+                        str(scale),
+                        "--placement-mode",
+                        placement_mode,
+                        "--seed",
+                        str(seed),
+                        "--output",
                     str(output_path),
                     "--csv",
                     str(csv_path),
                 ]
-                print(f"[sweep] {scenario_name} scale={scale} seed={seed}")
-                print("        ", " ".join(shlex.quote(part) for part in cmd))
-                subprocess.run(cmd, check=True)
+                    print(f"[sweep] {scenario_name} mode={placement_mode} scale={scale} seed={seed}")
+                    print("        ", " ".join(shlex.quote(part) for part in cmd))
+                    subprocess.run(cmd, check=True)
 
 
 def main(argv: List[str]) -> int:
