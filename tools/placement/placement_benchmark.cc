@@ -324,7 +324,8 @@ double compute_throughput(std::size_t task_count, nicloadoff::Duration makespan_
 void write_summary(const std::filesystem::path& output_path,
                    const Options& options,
                    const ArrivalFixture& fixture,
-                   const std::string& workload_name,
+                   const std::string& workload_label,
+                   const std::filesystem::path& workload_path,
                    const nicloadoff::RunMetrics& metrics,
                    nicloadoff::Duration makespan_us) {
     std::ofstream out(output_path);
@@ -337,7 +338,8 @@ void write_summary(const std::filesystem::path& output_path,
 
     out << "{\n";
     out << "  \"profile\": \"" << options.profile_path.filename().string() << "\",\n";
-    out << "  \"workload\": \"" << workload_name << "\",\n";
+    out << "  \"workload\": \"" << workload_label << "\",\n";
+    out << "  \"workload_path\": \"" << workload_path.string() << "\",\n";
     out << "  \"arrival_model\": \"" << fixture.model << "\",\n";
     out << "  \"arrival_scale\": " << options.arrival_scale << ",\n";
     out << "  \"placement_mode\": \"" << placement_mode_to_string(options.placement_mode) << "\",\n";
@@ -357,7 +359,8 @@ void write_summary(const std::filesystem::path& output_path,
 void append_csv(const std::filesystem::path& csv_path,
                 const Options& options,
                 const ArrivalFixture& fixture,
-                const std::string& workload_name,
+                const std::string& workload_label,
+                const std::filesystem::path& workload_path,
                 const nicloadoff::RunMetrics& metrics,
                 nicloadoff::Duration makespan_us) {
     const bool exists = std::filesystem::exists(csv_path);
@@ -366,7 +369,7 @@ void append_csv(const std::filesystem::path& csv_path,
         throw std::runtime_error("failed to open csv output: " + csv_path.string());
     }
     if (!exists) {
-        out << "profile,workload,arrival_model,arrival_scale,placement_mode,arrival_count,completed_tasks,"
+        out << "profile,workload_label,workload_path,arrival_model,arrival_scale,placement_mode,arrival_count,completed_tasks,"
                "makespan_us,throughput_per_sec,mean_latency_us,latency_p50_us,latency_p95_us,latency_p99_us,"
                "total_latency_us,peak_waiting_queue_depth,seed\n";
     }
@@ -375,7 +378,8 @@ void append_csv(const std::filesystem::path& csv_path,
     const auto& latency_stats = metrics.aggregate.latency_stats;
 
     out << options.profile_path.filename().string() << ","
-        << workload_name << ","
+        << workload_label << ","
+        << workload_path.string() << ","
         << fixture.model << ","
         << options.arrival_scale << ","
         << placement_mode_to_string(options.placement_mode) << ","
@@ -435,9 +439,9 @@ int main(int argc, char** argv) {
         const nicloadoff::RunMetrics metrics = scheduler.aggregated_metrics();
         const nicloadoff::Duration makespan_us = scheduler.current_time();
 
-        write_summary(options.output_path, options, fixture, loaded.workload_name, metrics, makespan_us);
+        write_summary(options.output_path, options, fixture, loaded.workload_name, options.workload_path, metrics, makespan_us);
         if (options.csv_path) {
-            append_csv(*options.csv_path, options, fixture, loaded.workload_name, metrics, makespan_us);
+            append_csv(*options.csv_path, options, fixture, loaded.workload_name, options.workload_path, metrics, makespan_us);
         }
 
         std::cout << "Placement benchmark complete. Results written to "

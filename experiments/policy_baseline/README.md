@@ -30,4 +30,6 @@ metadata-aware filtering/grouping (`--filter workload_label=skew_dag --group-by 
 additional columns via `--columns`. `export_normalized.py`
 groups repeated runs and emits both a normalized CSV and (optionally) Parquet table (requires `pyarrow`).
 `plots/policy_baseline.py` consumes the normalized CSV to render throughput/latency comparison charts
-and stores them under `plots/generated/`.
+and stores them under `plots/generated/`. `import_static_traces.py` ingests the static placement sweep
+CSV and emits `dag_static_summary.csv`, capturing host- vs. NIC-pinned baselines for the skewed DAG
+scenarios so policy experiments can reference the fixed placements directly.

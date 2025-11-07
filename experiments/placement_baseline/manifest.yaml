@@ -28,6 +28,14 @@
       "arrival_scales": [1.0],
       "seeds": [1],
       "placement_modes": ["host_pinned", "nic_pinned"]
+    },
+    {
+      "name": "skew_dag_heavy_arrival",
+      "workload": "workloads/examples/skew_dag_heavy.yaml",
+      "arrival": "workloads/arrivals/poisson_bursty.yaml",
+      "arrival_scales": [1.0],
+      "seeds": [1],
+      "placement_modes": ["host_pinned", "nic_pinned"]
     }
   ]
 }
