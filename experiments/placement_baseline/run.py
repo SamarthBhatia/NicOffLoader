@@ -9,13 +9,12 @@ import shlex
 import subprocess
 import sys
 from typing import Any, Dict, Iterable, List
+import json
 
 try:
-    import yaml
-except ImportError as exc:  # pragma: no cover - dependency hint
-    raise SystemExit(
-        "PyYAML is required to parse manifest.yaml (pip install pyyaml)."
-    ) from exc
+    import yaml  # type: ignore
+except ImportError:  # pragma: no cover - fallback to JSON subset
+    yaml = None
 
 
 def _as_list(value: Any, fallback: Iterable[Any]) -> List[Any]:
@@ -27,7 +26,18 @@ def _as_list(value: Any, fallback: Iterable[Any]) -> List[Any]:
 
 
 def load_manifest(path: pathlib.Path) -> Dict[str, Any]:
-    data = yaml.safe_load(path.read_text())
+    text = path.read_text()
+    data: Dict[str, Any]
+    if yaml is not None:
+        data = yaml.safe_load(text)
+    else:
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(
+                "PyYAML is not installed and the manifest is not valid JSON. "
+                "Either install PyYAML (pip install pyyaml) or keep the manifest JSON-compatible."
+            ) from exc
     if not data:
         raise ValueError(f"manifest {path} is empty")
     if "workloads" not in data:

@@ -27,4 +27,5 @@ scripts consume when generating throughput/latency figures.
 `run.py` will create `experiments/placement_baseline/results/placement_sweep.csv` (columns now include
 mean/p50/p95/p99 latency plus the peak waiting-queue depth captured by the scheduler) and stash the JSON
 summaries produced by `placement_benchmark` alongside it. The plotting step reads the CSV and writes
-figures to `plots/generated/`.
+figures to `plots/generated/`. PyYAML is optional: when it is not installed the script falls back to
+loading `manifest.yaml` as JSON, so keep custom manifests JSON-compatible or install PyYAML.
