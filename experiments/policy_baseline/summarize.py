@@ -6,8 +6,32 @@ from __future__ import annotations
 import argparse
 import csv
 import pathlib
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
+BASE_COLUMNS = {
+    "run_name",
+    "profile",
+    "workload",
+    "policy",
+    "seed",
+    "host_mode",
+    "nic_mode",
+    "completed_tasks",
+    "makespan_us",
+    "throughput_per_sec",
+    "mean_latency_us",
+    "p95_latency_us",
+    "p99_latency_us",
+    "peak_waiting_queue_depth",
+    "output_path",
+}
+NUMERIC_METRICS = [
+    ("throughput", "throughput_per_sec"),
+    ("mean_latency", "mean_latency_us"),
+    ("p95_latency", "p95_latency_us"),
+    ("p99_latency", "p99_latency_us"),
+]
+PEAK_FIELD = ("peak_q", "peak_waiting_queue_depth")
 
 def load_rows(csv_path: pathlib.Path) -> List[Dict[str, str]]:
     if not csv_path.exists():
@@ -17,19 +41,31 @@ def load_rows(csv_path: pathlib.Path) -> List[Dict[str, str]]:
         return list(reader)
 
 
-def format_table(rows: List[Dict[str, str]]) -> str:
-    headers = ["run_name", "policy", "throughput", "mean_latency", "p95_latency", "p99_latency", "peak_q"]
+def apply_filters(rows: List[Dict[str, str]], filters: List[Tuple[str, str]]) -> List[Dict[str, str]]:
+    if not filters:
+        return rows
+    filtered = []
+    for row in rows:
+        if all(row.get(key, "") == value for key, value in filters):
+            filtered.append(row)
+    return filtered
+
+
+def format_table(rows: List[Dict[str, str]], extra_columns: List[str]) -> str:
+    headers = ["run_name", "policy"] + [label for label, _ in NUMERIC_METRICS] + [PEAK_FIELD[0]]
+    headers += extra_columns
     formatted = []
     for row in rows:
-        formatted.append({
+        entry = {
             "run_name": row["run_name"],
             "policy": row["policy"],
-            "throughput": f'{float(row["throughput_per_sec"]):.2f}',
-            "mean_latency": f'{float(row["mean_latency_us"]):.2f}',
-            "p95_latency": f'{float(row["p95_latency_us"]):.2f}',
-            "p99_latency": f'{float(row["p99_latency_us"]):.2f}',
-            "peak_q": row["peak_waiting_queue_depth"],
-        })
+            PEAK_FIELD[0]: row[PEAK_FIELD[1]],
+        }
+        for label, field in NUMERIC_METRICS:
+            entry[label] = f"{float(row[field]):.2f}"
+        for column in extra_columns:
+            entry[column] = row.get(column, "")
+        formatted.append(entry)
     widths = {h: max(len(h), *(len(entry[h]) for entry in formatted)) for h in headers}
 
     def render_row(entry: Dict[str, str]) -> str:
@@ -41,12 +77,76 @@ def format_table(rows: List[Dict[str, str]]) -> str:
     return f"{header_line}\n{divider}\n{body}"
 
 
+def format_grouped_table(rows: List[Dict[str, str]],
+                         group_by: str,
+                         extra_columns: List[str]) -> str:
+    headers = [group_by, "count"] + [label for label, _ in NUMERIC_METRICS] + [PEAK_FIELD[0]] + extra_columns
+    widths = {h: len(h) for h in headers}
+
+    def format_value(value: str, header: str) -> str:
+        widths[header] = max(widths[header], len(value))
+        return value
+
+    lines = []
+    for row in rows:
+        formatted_row = {
+            group_by: row[group_by],
+            "count": str(row["count"]),
+        }
+        for label, field in NUMERIC_METRICS:
+            formatted_row[label] = f"{row[field]:.2f}"
+        formatted_row[PEAK_FIELD[0]] = f"{row[PEAK_FIELD[0]]:.2f}"
+        for column in extra_columns:
+            formatted_row[column] = row.get(column, "")
+        for key, value in formatted_row.items():
+            formatted_row[key] = format_value(value, key)
+        lines.append(formatted_row)
+
+    header_line = " | ".join(h.ljust(widths[h]) for h in headers)
+    divider = "-+-".join("-" * widths[h] for h in headers)
+    body = "\n".join(" | ".join(row[h].ljust(widths[h]) for h in headers) for row in lines)
+    return f"{header_line}\n{divider}\n{body}"
+
+
+def aggregate_rows(rows: List[Dict[str, str]],
+                   group_by: str,
+                   extra_columns: List[str]) -> List[Dict[str, str]]:
+    grouped: Dict[str, List[Dict[str, str]]] = {}
+    for row in rows:
+        grouped.setdefault(row[group_by], []).append(row)
+    aggregated_rows: List[Dict[str, str]] = []
+    for key, entries in grouped.items():
+        aggregate: Dict[str, str] = {group_by: key, "count": len(entries)}
+        for label, field in NUMERIC_METRICS:
+            aggregate[field] = sum(float(entry[field]) for entry in entries) / len(entries)
+        aggregate[PEAK_FIELD[0]] = sum(float(entry[PEAK_FIELD[1]]) for entry in entries) / len(entries)
+        for column in extra_columns:
+            values = {entry.get(column, "") for entry in entries if entry.get(column, "")}
+            if not values:
+                aggregate[column] = ""
+            elif len(values) == 1:
+                aggregate[column] = values.pop()
+            else:
+                aggregate[column] = "mixed"
+        aggregated_rows.append(aggregate)
+    aggregated_rows.sort(key=lambda row: row[group_by])
+    return aggregated_rows
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     default_csv = pathlib.Path("experiments/policy_baseline/results/policy_baseline.csv")
     parser.add_argument("--csv", type=pathlib.Path, default=default_csv, help="Path to batch CSV")
     parser.add_argument("--sort", choices=["throughput", "mean_latency"], default="throughput",
                         help="Sort rows by a metric (descending for throughput, ascending for latency)")
+    parser.add_argument("--filter", action="append", default=[], help="Filter rows by key=value (can repeat)")
+    parser.add_argument("--group-by", help="Column to group by (e.g., workload_label, arrival_model)")
+    parser.add_argument(
+        "--columns",
+        nargs="*",
+        default=[],
+        help="Additional columns to show (or propagate when grouping), such as workload_label",
+    )
     args = parser.parse_args()
 
     rows = load_rows(args.csv)
@@ -54,12 +154,37 @@ def main() -> int:
         print("CSV is empty.")
         return 0
 
+    available_columns = set(rows[0].keys())
+    for column in args.columns:
+        if column not in available_columns:
+            raise SystemExit(f"Unknown column requested via --columns: {column}")
+    filters: List[Tuple[str, str]] = []
+    for raw in args.filter:
+        if "=" not in raw:
+            raise SystemExit(f"Invalid filter '{raw}'. Use key=value syntax.")
+        key, value = raw.split("=", 1)
+        if key not in available_columns:
+            raise SystemExit(f"Filter column '{key}' not found in CSV.")
+        filters.append((key, value))
+
+    rows = apply_filters(rows, filters)
+    if not rows:
+        print("No rows match the provided filters.")
+        return 0
+
+    if args.group_by:
+        if args.group_by not in available_columns:
+            raise SystemExit(f"group-by column '{args.group_by}' not found in CSV.")
+        aggregated = aggregate_rows(rows, args.group_by, args.columns)
+        print(format_grouped_table(aggregated, args.group_by, args.columns))
+        return 0
+
     if args.sort == "throughput":
         rows.sort(key=lambda r: float(r["throughput_per_sec"]), reverse=True)
     else:
         rows.sort(key=lambda r: float(r["mean_latency_us"]))
 
-    print(format_table(rows))
+    print(format_table(rows, args.columns))
     return 0
 
 

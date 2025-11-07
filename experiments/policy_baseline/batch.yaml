@@ -2,14 +2,14 @@ defaults:
   profile: ../../profiles/bf2_default.yaml
   workload: ../../workloads/examples/kv_read_template.yaml
   output_dir: ./results
-  service_modes:
-    host: deterministic
-    nic: deterministic
-  seed: 1
   metadata:
     workload_label: kv_read
     arrival_model: periodic
     background_load: low
+  service_modes:
+    host: deterministic
+    nic: deterministic
+  seed: 1
 csv: ./results/policy_baseline.csv
 runs:
   - name: prefer-host
@@ -24,3 +24,17 @@ runs:
     policy: limit-active-1
     metadata:
       placement: host
+  - name: dag-prefer-host
+    workload: ../../workloads/examples/skew_dag.yaml
+    policy: prefer-host
+    metadata:
+      placement: host
+      workload_label: skew_dag
+      arrival_model: dag-burst
+  - name: dag-prefer-nic
+    workload: ../../workloads/examples/skew_dag.yaml
+    policy: prefer-nic
+    metadata:
+      placement: nic
+      workload_label: skew_dag
+      arrival_model: dag-burst

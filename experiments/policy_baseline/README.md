@@ -20,10 +20,14 @@ python3 plots/policy_baseline.py --csv experiments/policy_baseline/results/polic
 Paths inside the manifest are resolved relative to the manifest’s directory, so the sample uses `../../`
 to reach repo-level fixtures. Each run entry inherits defaults for the profile, workload, seed, and
 output directory. Metadata fields declared under `defaults.metadata` (or overridden per run) are copied
-into the CSV so you can capture annotations like arrival models or load regimes. Feel free to add new
+into the CSV so you can capture annotations like arrival models or load regimes. The example manifest
+ships both the baseline KV workload and a DAG-heavy `skew_dag` workload so policy comparisons cover
+single-path and dependency-driven scenarios; feel free to add new
 `runs:` entries for additional policies or workloads—the CLI validates policy names and will append new
 rows to the CSV automatically. The `summarize.py` helper reads the CSV and prints a quick comparison
-table (sort by throughput by default or mean latency via `--sort mean_latency`). `export_normalized.py`
+table (sort by throughput by default or mean latency via `--sort mean_latency`), and now supports
+metadata-aware filtering/grouping (`--filter workload_label=skew_dag --group-by policy`) plus
+additional columns via `--columns`. `export_normalized.py`
 groups repeated runs and emits both a normalized CSV and (optionally) Parquet table (requires `pyarrow`).
 `plots/policy_baseline.py` consumes the normalized CSV to render throughput/latency comparison charts
 and stores them under `plots/generated/`.

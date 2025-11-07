@@ -165,6 +165,12 @@ runs:
     policy: prefer-host
   - name: prefer-nic
     policy: prefer-nic
+  - name: dag-prefer-host
+    workload: workloads/examples/skew_dag.yaml
+    policy: prefer-host
+  - name: dag-prefer-nic
+    workload: workloads/examples/skew_dag.yaml
+    policy: prefer-nic
 ```
 
 Invoke it with:
