@@ -98,6 +98,7 @@ void BasicScheduler::handle_task_ready(TaskId id, SimTime timestamp) {
     if (!started && waiting_set_.count(id) == 0) {
         waiting_set_.insert(id);
         waiting_queue_.push_back(id);
+        record_waiting_queue_depth();
         evaluate_policy_hook();
     }
 }
@@ -255,6 +256,7 @@ void BasicScheduler::drain_waiting(SimTime timestamp) {
         auto& ctx = get_task(id);
         if (!try_start_task(ctx, timestamp)) {
             waiting_queue_.push_back(id);
+            record_waiting_queue_depth();
         }
         ++processed;
     }
@@ -375,6 +377,12 @@ void BasicScheduler::apply_admission_control(const policy::AdmissionControlDirec
     admission_limit_ = directive.max_active_tasks;
 }
 
+void BasicScheduler::record_waiting_queue_depth() {
+    if (waiting_queue_.size() > peak_waiting_queue_depth_) {
+        peak_waiting_queue_depth_ = waiting_queue_.size();
+    }
+}
+
 PolicyStateSnapshot BasicScheduler::policy_state_snapshot() const {
     PolicyStateSnapshot snapshot{};
     snapshot.current_time = current_time_;
@@ -382,6 +390,7 @@ PolicyStateSnapshot BasicScheduler::policy_state_snapshot() const {
     snapshot.queues.waiting_queue_depth = waiting_queue_.size();
     snapshot.queues.processed_events = events_processed_;
     snapshot.run_metrics = compute_run_metrics(completed_metrics_);
+    snapshot.run_metrics.aggregate.peak_waiting_queue_depth = peak_waiting_queue_depth_;
 
     const std::vector<Resource> resource_values = resources_.snapshot();
     snapshot.resources.reserve(resource_values.size());

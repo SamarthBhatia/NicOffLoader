@@ -58,6 +58,7 @@ class BasicScheduler {
     [[nodiscard]] std::optional<ScheduledEvent> next_event() const;
     [[nodiscard]] std::size_t event_queue_size() const noexcept { return queue_.size(); }
     [[nodiscard]] std::size_t waiting_queue_size() const noexcept { return waiting_queue_.size(); }
+    [[nodiscard]] std::size_t peak_waiting_queue_depth() const noexcept { return peak_waiting_queue_depth_; }
     [[nodiscard]] std::vector<TaskId> waiting_tasks() const;
     [[nodiscard]] std::vector<TaskStatus> task_statuses() const;
     [[nodiscard]] std::size_t events_processed() const noexcept { return events_processed_; }
@@ -96,6 +97,7 @@ class BasicScheduler {
     std::unordered_map<TaskId, TaskContext> tasks_;
     std::deque<TaskId> waiting_queue_;
     std::unordered_set<TaskId> waiting_set_;
+    std::size_t peak_waiting_queue_depth_{0};
     std::vector<TaskId> completed_tasks_;
     std::optional<ScheduledEvent> last_event_;
     std::size_t events_processed_{0};
@@ -115,6 +117,7 @@ class BasicScheduler {
     void evaluate_policy_hook();
     void apply_waiting_reorder(const std::vector<TaskId>& preferred_order);
     void apply_admission_control(const policy::AdmissionControlDirective& directive);
+    void record_waiting_queue_depth();
 };
 
 } // namespace nicloadoff

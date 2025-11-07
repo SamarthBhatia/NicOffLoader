@@ -3,7 +3,7 @@
 Plotting scripts and notebooks for figure generation live here. Keep rendered figures under `plots/generated/` or within experiment-specific folders.
 
 ## placement_baseline.py
-Generates throughput/latency vs. arrival-scale plots for the placement benchmark sweep.
+Generates throughput, latency (mean + p95), and peak waiting-queue depth vs. arrival-scale plots for the placement benchmark sweep.
 
 ```bash
 python3 plots/placement_baseline.py \

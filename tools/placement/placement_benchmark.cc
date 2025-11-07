@@ -188,8 +188,7 @@ void write_summary(const std::filesystem::path& output_path,
     }
     const std::size_t task_count = metrics.tasks.size();
     const double throughput = compute_throughput(task_count, makespan_us);
-    const double mean_latency =
-        task_count > 0 ? metrics.aggregate.total_latency / static_cast<double>(task_count) : 0.0;
+    const auto& latency_stats = metrics.aggregate.latency_stats;
 
     out << "{\n";
     out << "  \"profile\": \"" << options.profile_path.filename().string() << "\",\n";
@@ -201,7 +200,11 @@ void write_summary(const std::filesystem::path& output_path,
     out << "  \"makespan_us\": " << makespan_us << ",\n";
     out << "  \"throughput_per_sec\": " << throughput << ",\n";
     out << "  \"total_latency_us\": " << metrics.aggregate.total_latency << ",\n";
-    out << "  \"mean_latency_us\": " << mean_latency << "\n";
+    out << "  \"mean_latency_us\": " << latency_stats.mean << ",\n";
+    out << "  \"latency_p50_us\": " << latency_stats.p50 << ",\n";
+    out << "  \"latency_p95_us\": " << latency_stats.p95 << ",\n";
+    out << "  \"latency_p99_us\": " << latency_stats.p99 << ",\n";
+    out << "  \"peak_waiting_queue_depth\": " << metrics.aggregate.peak_waiting_queue_depth << "\n";
     out << "}\n";
 }
 
@@ -218,12 +221,12 @@ void append_csv(const std::filesystem::path& csv_path,
     }
     if (!exists) {
         out << "profile,workload,arrival_model,arrival_scale,arrival_count,completed_tasks,makespan_us,"
-               "throughput_per_sec,mean_latency_us,total_latency_us,seed\n";
+               "throughput_per_sec,mean_latency_us,latency_p50_us,latency_p95_us,latency_p99_us,total_latency_us,"
+               "peak_waiting_queue_depth,seed\n";
     }
     const std::size_t task_count = metrics.tasks.size();
     const double throughput = compute_throughput(task_count, makespan_us);
-    const double mean_latency =
-        task_count > 0 ? metrics.aggregate.total_latency / static_cast<double>(task_count) : 0.0;
+    const auto& latency_stats = metrics.aggregate.latency_stats;
 
     out << options.profile_path.filename().string() << ","
         << workload_name << ","
@@ -233,8 +236,12 @@ void append_csv(const std::filesystem::path& csv_path,
         << task_count << ","
         << makespan_us << ","
         << throughput << ","
-        << mean_latency << ","
+        << latency_stats.mean << ","
+        << latency_stats.p50 << ","
+        << latency_stats.p95 << ","
+        << latency_stats.p99 << ","
         << metrics.aggregate.total_latency << ","
+        << metrics.aggregate.peak_waiting_queue_depth << ","
         << options.seed << "\n";
 }
 

@@ -24,6 +24,7 @@ scripts consume when generating throughput/latency figures.
    python3 plots/placement_baseline.py
    ```
 
-`run.py` will create `experiments/placement_baseline/results/placement_sweep.csv` and stash the JSON
+`run.py` will create `experiments/placement_baseline/results/placement_sweep.csv` (columns now include
+mean/p50/p95/p99 latency plus the peak waiting-queue depth captured by the scheduler) and stash the JSON
 summaries produced by `placement_benchmark` alongside it. The plotting step reads the CSV and writes
 figures to `plots/generated/`.

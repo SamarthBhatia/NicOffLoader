@@ -22,9 +22,9 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 3 — Workload model
 - **Focus:** Task DAGs and baseline workloads.
-- **Done:** Documented the YAML workload schema (`workloads/SCHEMA.md`) covering tasks, DAG nodes, instructions/byte hints, and placement metadata referenced by `workload_loader.cc`; added example templates (`workloads/examples/kv_read_template.yaml`, `tcp_split_template.yaml`) exercising the new metadata fields; introduced arrival-model fixtures (`workloads/arrivals/poisson_bursty.yaml`, `periodic_sweep.yaml`) for bursty Poisson and periodic scenarios; implemented the `placement_benchmark` C++ harness (under `tools/placement/`) that replays templates across deterministic vs. bursty arrivals and emits throughput/latency summaries; captured baseline numbers (KV periodic ≈240 kops/s, TCP bursty ≈36 kops/s) to seed the static comparison; added an arrival-scaling knob plus `experiments/placement_baseline` (manifest + sweep driver) and `plots/placement_baseline.py` so benchmark CSVs immediately feed the plotting pipeline.
+- **Done:** Documented the YAML workload schema (`workloads/SCHEMA.md`) covering tasks, DAG nodes, instructions/byte hints, and placement metadata referenced by `workload_loader.cc`; added example templates (`workloads/examples/kv_read_template.yaml`, `tcp_split_template.yaml`) exercising the new metadata fields; introduced arrival-model fixtures (`workloads/arrivals/poisson_bursty.yaml`, `periodic_sweep.yaml`) for bursty Poisson and periodic scenarios; implemented the `placement_benchmark` C++ harness (under `tools/placement/`) that replays templates across deterministic vs. bursty arrivals and emits throughput/latency summaries; captured baseline numbers (KV periodic ≈240 kops/s, TCP bursty ≈36 kops/s) to seed the static comparison; added an arrival-scaling knob plus `experiments/placement_baseline` (manifest + sweep driver) and `plots/placement_baseline.py` so benchmark CSVs immediately feed the plotting pipeline; extended the sweep outputs with latency percentiles (p50/95/99) and peak waiting-queue depth to make queue buildup explicit in both JSON and CSV artifacts.
 - **Next:** Layer DAG-heavy workloads and policy-aware placement hints into the static benchmark so we can contrast host vs. NIC pinning under dependency pressure.
-- **Remaining:** Extend the static placement benchmark to report percentile latency/queue depth alongside throughput for each workload.
+- **Remaining:** Capture percentile queue/latency stats for a DAG-heavy scenario and compare static host-only vs. NIC-only placements to motivate policy hooks.
 
 ## Phase 4 — Observability + state API
 - **Focus:** Expose runtime metrics for policies.
@@ -52,7 +52,7 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 8 — Experiment harness
 - **Focus:** CLI runner, output schema, plotting scripts.
-- **Done:** Seeded single-run CLI harness (`nicloadoff_cli`) that emits aggregated JSON metrics for simulator runs, locked its JSON contract with a regression test, and now ships an experiment/pipeline pairing (`experiments/placement_baseline/run.py` + `plots/placement_baseline.py`) that sweeps arrival scales and renders throughput/latency figures straight from the placement benchmark CSV.
+- **Done:** Seeded single-run CLI harness (`nicloadoff_cli`) that emits aggregated JSON metrics for simulator runs, locked its JSON contract with a regression test, and now ships an experiment/pipeline pairing (`experiments/placement_baseline/run.py` + `plots/placement_baseline.py`) that sweeps arrival scales and renders throughput/latency (mean + p95) plus peak queue-depth figures straight from the placement benchmark CSV.
 - **Next:** Share the sweep machinery with `nicloadoff_cli` so policy experiments consume the same manifest format and emit consistent CSV/Parquet artifacts.
 - **Remaining:** Implement manifest-driven batch execution for CLI runs, produce reproducible plots (throughput vs lambda, latency percentiles), and archive results under `experiments/results/`.
 

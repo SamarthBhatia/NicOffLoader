@@ -36,6 +36,7 @@ struct RunAggregateMetrics {
     Duration host_service_time{0.0};
     Duration nic_service_time{0.0};
     AggregateStatistic latency_stats{};
+    std::size_t peak_waiting_queue_depth{0};
 };
 
 struct RunMetrics {
