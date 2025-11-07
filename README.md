@@ -153,6 +153,9 @@ defaults:
   profile: profiles/bf2_default.yaml
   workload: workloads/examples/kv_read_template.yaml
   output_dir: experiments/policy_baseline/results
+  metadata:
+    workload_label: kv_read
+    arrival_model: periodic
   service_modes:
     host: deterministic
     nic: deterministic
@@ -168,11 +171,18 @@ Invoke it with:
 
 ```bash
 ./build/tools/cli/nicloadoff_cli --batch experiments/policy_baseline/batch.yaml
+python3 experiments/policy_baseline/summarize.py
+python3 experiments/policy_baseline/export_normalized.py
+python3 plots/policy_baseline.py --csv experiments/policy_baseline/results/policy_baseline_normalized.csv
 ```
 
 Each run inherits the defaults unless a field is overridden. The CSV header captures policy, seed,
-service modes, throughput, latency percentiles, and the peak waiting-queue depth so analysis scripts
-can ingest one table without re-parsing the JSON outputs. See `experiments/policy_baseline/README.md`
+service modes, throughput, latency percentiles, the peak waiting-queue depth, and any metadata fields
+you define (e.g., `arrival_model`, `background_load`) so analysis scripts can ingest one table without
+re-parsing the JSON outputs. Use `experiments/policy_baseline/summarize.py` to dump a quick comparison
+table, `experiments/policy_baseline/export_normalized.py` to deduplicate rows and (optionally) emit a
+Parquet table, and `plots/policy_baseline.py` to render throughput/latency charts. See
+`experiments/policy_baseline/README.md`
 for more details.
 
 ### Launch the ncurses TUI

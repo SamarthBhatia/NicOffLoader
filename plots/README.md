@@ -10,3 +10,14 @@ python3 plots/placement_baseline.py \
   --csv experiments/placement_baseline/results/placement_sweep.csv \
   --output plots/generated/placement_baseline.png
 ```
+
+## policy_baseline.py
+Consumes the `experiments/policy_baseline/results/policy_baseline.csv` batch output and renders
+side-by-side throughput and latency (mean + p95) comparisons per policy, annotated with the peak
+waiting-queue depth.
+
+```bash
+python3 plots/policy_baseline.py \
+  --csv experiments/policy_baseline/results/policy_baseline.csv \
+  --output plots/generated/policy_baseline.png
+```

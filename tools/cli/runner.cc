@@ -18,9 +18,11 @@
 #include <optional>
 #include <stdexcept>
 #include <sstream>
+#include <set>
 #include <string>
 #include <vector>
 #include <cctype>
+#include <map>
 
 namespace nicloadoff::cli {
 namespace {
@@ -138,11 +140,13 @@ struct BatchDefaults {
     std::optional<std::string> policy_id;
     std::optional<ServiceTimeMode> host_mode;
     std::optional<ServiceTimeMode> nic_mode;
+    std::map<std::string, std::string> metadata;
 };
 
 struct BatchRunConfig {
     std::string name;
     CliOptions options;
+    std::map<std::string, std::string> metadata;
 };
 
 struct BatchManifestData {
@@ -150,6 +154,7 @@ struct BatchManifestData {
     std::optional<std::filesystem::path> csv_path;
     BatchDefaults defaults;
     std::vector<BatchRunConfig> runs;
+    std::vector<std::string> metadata_keys;
 };
 
 std::filesystem::path resolve_relative_path(const std::filesystem::path& base, const std::string& value) {
@@ -240,7 +245,30 @@ void apply_service_modes_override(const YAML::Node& node, CliOptions& options, c
     }
 }
 
-BatchDefaults parse_batch_defaults(const YAML::Node& node, const std::filesystem::path& base_dir) {
+std::map<std::string, std::string> parse_metadata_map(const YAML::Node& node, const std::string& context) {
+    std::map<std::string, std::string> metadata;
+    if (!node) {
+        return metadata;
+    }
+    if (!node.IsMap()) {
+        std::ostringstream oss;
+        oss << context << " metadata must be a mapping";
+        throw std::runtime_error(oss.str());
+    }
+    for (const auto& entry : node) {
+        if (!entry.first.IsScalar() || !entry.second.IsScalar()) {
+            std::ostringstream oss;
+            oss << context << " metadata keys/values must be strings";
+            throw std::runtime_error(oss.str());
+        }
+        metadata[entry.first.as<std::string>()] = entry.second.as<std::string>();
+    }
+    return metadata;
+}
+
+BatchDefaults parse_batch_defaults(const YAML::Node& node,
+                                   const std::filesystem::path& base_dir,
+                                   std::set<std::string>& metadata_keys) {
     BatchDefaults defaults;
     if (!node) {
         return defaults;
@@ -284,6 +312,12 @@ BatchDefaults parse_batch_defaults(const YAML::Node& node, const std::filesystem
                 throw std::runtime_error("batch manifest defaults.service_modes.nic must be a string");
             }
             defaults.nic_mode = parse_mode_or_throw(nic.as<std::string>(), "defaults.service_modes.nic");
+        }
+    }
+    if (const YAML::Node metadata = node["metadata"]) {
+        defaults.metadata = parse_metadata_map(metadata, "defaults");
+        for (const auto& [key, _] : defaults.metadata) {
+            metadata_keys.insert(key);
         }
     }
     return defaults;
@@ -344,7 +378,8 @@ std::string ensure_run_name(const YAML::Node& run_node, std::size_t index) {
 BatchRunConfig parse_batch_run(const YAML::Node& run_node,
                                const BatchDefaults& defaults,
                                const std::filesystem::path& base_dir,
-                               std::size_t index) {
+                               std::size_t index,
+                               std::set<std::string>& metadata_keys) {
     if (!run_node.IsMap()) {
         std::ostringstream oss;
         oss << "batch manifest runs[" << index << "] must be a mapping";
@@ -387,6 +422,18 @@ BatchRunConfig parse_batch_run(const YAML::Node& run_node,
     apply_service_modes_override(run_node["service_modes"], config.options,
                                  "batch run '" + config.name + "'");
 
+    std::map<std::string, std::string> metadata = defaults.metadata;
+    if (const YAML::Node metadata_node = run_node["metadata"]) {
+        auto override = parse_metadata_map(metadata_node, "batch run '" + config.name + "'");
+        for (const auto& [key, value] : override) {
+            metadata[key] = value;
+        }
+    }
+    for (const auto& [key, _] : metadata) {
+        metadata_keys.insert(key);
+    }
+    config.metadata = std::move(metadata);
+
     return config;
 }
 
@@ -398,6 +445,7 @@ BatchManifestData parse_batch_manifest_data(const std::filesystem::path& manifes
 
     BatchManifestData manifest;
     manifest.base_dir = manifest_path.parent_path();
+    std::set<std::string> metadata_keys;
     if (const YAML::Node csv = root["csv"]) {
         if (!csv.IsScalar()) {
             throw std::runtime_error("batch manifest 'csv' field must be a string");
@@ -405,7 +453,7 @@ BatchManifestData parse_batch_manifest_data(const std::filesystem::path& manifes
         manifest.csv_path = resolve_relative_path(manifest.base_dir, csv.as<std::string>());
     }
 
-    manifest.defaults = parse_batch_defaults(root["defaults"], manifest.base_dir);
+    manifest.defaults = parse_batch_defaults(root["defaults"], manifest.base_dir, metadata_keys);
 
     const YAML::Node runs = root["runs"];
     if (!runs || !runs.IsSequence() || runs.size() == 0) {
@@ -414,8 +462,9 @@ BatchManifestData parse_batch_manifest_data(const std::filesystem::path& manifes
 
     manifest.runs.reserve(runs.size());
     for (std::size_t idx = 0; idx < runs.size(); ++idx) {
-        manifest.runs.push_back(parse_batch_run(runs[idx], manifest.defaults, manifest.base_dir, idx));
+        manifest.runs.push_back(parse_batch_run(runs[idx], manifest.defaults, manifest.base_dir, idx, metadata_keys));
     }
+    manifest.metadata_keys.assign(metadata_keys.begin(), metadata_keys.end());
     return manifest;
 }
 
@@ -927,12 +976,18 @@ RunSummary run_simulation(const CliOptions& options) {
 
 namespace {
 
-void write_batch_csv_header(std::ofstream& out) {
+void write_batch_csv_header(std::ofstream& out, const std::vector<std::string>& metadata_keys) {
     out << "run_name,profile,workload,policy,seed,host_mode,nic_mode,completed_tasks,makespan_us,"
-           "throughput_per_sec,mean_latency_us,p95_latency_us,p99_latency_us,peak_waiting_queue_depth,output_path\n";
+           "throughput_per_sec,mean_latency_us,p95_latency_us,p99_latency_us,peak_waiting_queue_depth,output_path";
+    for (const auto& key : metadata_keys) {
+        out << "," << key;
+    }
+    out << "\n";
 }
 
-void append_batch_csv_row(std::ofstream& out, const BatchRunSummary& result) {
+void append_batch_csv_row(std::ofstream& out,
+                          const BatchRunSummary& result,
+                          const std::vector<std::string>& metadata_keys) {
     const auto& aggregate = result.summary.metrics.aggregate;
     const auto& latency = aggregate.latency_stats;
     out << result.name << ","
@@ -949,7 +1004,16 @@ void append_batch_csv_row(std::ofstream& out, const BatchRunSummary& result) {
         << format_double(latency.p95) << ","
         << format_double(latency.p99) << ","
         << aggregate.peak_waiting_queue_depth << ","
-        << result.options.output_path.string() << "\n";
+        << result.options.output_path.string();
+    for (const auto& key : metadata_keys) {
+        auto it = result.metadata.find(key);
+        if (it != result.metadata.end()) {
+            out << "," << it->second;
+        } else {
+            out << ",";
+        }
+    }
+    out << "\n";
 }
 
 } // namespace
@@ -974,7 +1038,7 @@ std::vector<BatchRunSummary> run_batch_manifest(const std::filesystem::path& man
             throw std::runtime_error("failed to open batch CSV '" + manifest.csv_path->string() + "'");
         }
         if (!exists) {
-            write_batch_csv_header(csv_stream);
+            write_batch_csv_header(csv_stream, manifest.metadata_keys);
         }
         csv_enabled = true;
     }
@@ -985,9 +1049,9 @@ std::vector<BatchRunSummary> run_batch_manifest(const std::filesystem::path& man
         std::cout << "[batch] " << run.name << ": profile=" << run.options.profile_path
                   << " workload=" << run.options.workload_path << "\n";
         RunSummary summary = run_simulation(run.options);
-        summaries.push_back(BatchRunSummary{run.name, run.options, summary});
+        summaries.push_back(BatchRunSummary{run.name, run.options, summary, run.metadata});
         if (csv_enabled) {
-            append_batch_csv_row(csv_stream, summaries.back());
+            append_batch_csv_row(csv_stream, summaries.back(), manifest.metadata_keys);
             csv_stream.flush();
         }
     }

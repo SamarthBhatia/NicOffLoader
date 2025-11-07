@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <iosfwd>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -40,6 +41,7 @@ struct BatchRunSummary {
     std::string name;
     CliOptions options;
     RunSummary summary;
+    std::map<std::string, std::string> metadata;
 };
 
 std::vector<BatchRunSummary> run_batch_manifest(const std::filesystem::path& manifest_path);

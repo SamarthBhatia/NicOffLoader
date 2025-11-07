@@ -1,16 +1,26 @@
 defaults:
-  profile: profiles/bf2_default.yaml
-  workload: workloads/examples/kv_read_template.yaml
-  output_dir: experiments/policy_baseline/results
+  profile: ../../profiles/bf2_default.yaml
+  workload: ../../workloads/examples/kv_read_template.yaml
+  output_dir: ./results
   service_modes:
     host: deterministic
     nic: deterministic
   seed: 1
-csv: experiments/policy_baseline/results/policy_baseline.csv
+  metadata:
+    workload_label: kv_read
+    arrival_model: periodic
+    background_load: low
+csv: ./results/policy_baseline.csv
 runs:
   - name: prefer-host
     policy: prefer-host
+    metadata:
+      placement: host
   - name: prefer-nic
     policy: prefer-nic
+    metadata:
+      placement: nic
   - name: limit-active
     policy: limit-active-1
+    metadata:
+      placement: host
