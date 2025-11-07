@@ -31,6 +31,11 @@ int main(int argc, char** argv) {
     }
 
     try {
+        if (options.batch_mode) {
+            const auto batch_results = run_batch_manifest(options.batch_manifest_path);
+            std::cout << "Completed batch with " << batch_results.size() << " run(s)\n";
+            return 0;
+        }
         RunSummary summary = run_simulation(options);
         std::cout << "Completed " << summary.completed_tasks << " tasks in "
                   << format_value(summary.makespan_us) << " us\n";

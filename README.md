@@ -143,6 +143,38 @@ service_modes:
 
 Run it with `./build/tools/cli/nicloadoff_cli --config run_manifest.yaml`. Command-line flags still override manifest settings.
 
+### Batch CLI runs
+For policy sweeps, pass a batch manifest that lists multiple runs. Batch mode executes each entry,
+produces individual JSON reports, and optionally appends an aggregate CSV:
+
+```yaml
+# experiments/policy_baseline/batch.yaml
+defaults:
+  profile: profiles/bf2_default.yaml
+  workload: workloads/examples/kv_read_template.yaml
+  output_dir: experiments/policy_baseline/results
+  service_modes:
+    host: deterministic
+    nic: deterministic
+csv: experiments/policy_baseline/results/policy_baseline.csv
+runs:
+  - name: prefer-host
+    policy: prefer-host
+  - name: prefer-nic
+    policy: prefer-nic
+```
+
+Invoke it with:
+
+```bash
+./build/tools/cli/nicloadoff_cli --batch experiments/policy_baseline/batch.yaml
+```
+
+Each run inherits the defaults unless a field is overridden. The CSV header captures policy, seed,
+service modes, throughput, latency percentiles, and the peak waiting-queue depth so analysis scripts
+can ingest one table without re-parsing the JSON outputs. See `experiments/policy_baseline/README.md`
+for more details.
+
 ### Launch the ncurses TUI
 The interactive TUI lets you inspect profiles, step through workloads, and experiment with policy hooks without leaving the terminal.
 

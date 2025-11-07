@@ -8,10 +8,12 @@
 #include "nicloadoff/service_time_model.hh"
 #include "nicloadoff/workload.hh"
 #include "nicloadoff/workload_loader.hh"
+#include "yaml-cpp/yaml.h"
 
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -125,6 +127,296 @@ WorkloadSpec apply_service_modes(const WorkloadSpec& base, ServiceTimeMode host_
         }
     }
     return spec;
+}
+
+struct BatchDefaults {
+    std::optional<std::filesystem::path> profile;
+    std::optional<std::filesystem::path> workload;
+    std::optional<std::filesystem::path> output;
+    std::optional<std::filesystem::path> output_dir;
+    std::optional<std::uint64_t> seed;
+    std::optional<std::string> policy_id;
+    std::optional<ServiceTimeMode> host_mode;
+    std::optional<ServiceTimeMode> nic_mode;
+};
+
+struct BatchRunConfig {
+    std::string name;
+    CliOptions options;
+};
+
+struct BatchManifestData {
+    std::filesystem::path base_dir;
+    std::optional<std::filesystem::path> csv_path;
+    BatchDefaults defaults;
+    std::vector<BatchRunConfig> runs;
+};
+
+std::filesystem::path resolve_relative_path(const std::filesystem::path& base, const std::string& value) {
+    std::filesystem::path path = value;
+    if (!path.is_absolute() && !base.empty()) {
+        path = base / path;
+    }
+    return path.lexically_normal();
+}
+
+std::optional<std::filesystem::path> read_optional_path(const YAML::Node& node,
+                                                        const char* key,
+                                                        const std::filesystem::path& base_dir) {
+    const YAML::Node child = node[key];
+    if (!child) {
+        return std::nullopt;
+    }
+    if (!child.IsScalar()) {
+        std::ostringstream oss;
+        oss << "batch manifest field '" << key << "' must be a string";
+        throw std::runtime_error(oss.str());
+    }
+    return resolve_relative_path(base_dir, child.as<std::string>());
+}
+
+std::optional<std::string> read_optional_string(const YAML::Node& node, const char* key) {
+    const YAML::Node child = node[key];
+    if (!child) {
+        return std::nullopt;
+    }
+    if (!child.IsScalar()) {
+        std::ostringstream oss;
+        oss << "batch manifest field '" << key << "' must be a string";
+        throw std::runtime_error(oss.str());
+    }
+    return child.as<std::string>();
+}
+
+std::optional<std::uint64_t> read_optional_seed(const YAML::Node& node, const char* key) {
+    const YAML::Node child = node[key];
+    if (!child) {
+        return std::nullopt;
+    }
+    if (!child.IsScalar()) {
+        std::ostringstream oss;
+        oss << "batch manifest field '" << key << "' must be numeric";
+        throw std::runtime_error(oss.str());
+    }
+    try {
+        return child.as<std::uint64_t>();
+    } catch (const std::exception&) {
+        std::ostringstream oss;
+        oss << "batch manifest field '" << key << "' must be numeric";
+        throw std::runtime_error(oss.str());
+    }
+}
+
+ServiceTimeMode parse_mode_or_throw(const std::string& value, const std::string& context) {
+    auto mode = parse_mode(value);
+    if (!mode) {
+        std::ostringstream oss;
+        oss << context << " has unknown service mode '" << value << "'";
+        throw std::runtime_error(oss.str());
+    }
+    return *mode;
+}
+
+void apply_service_modes_override(const YAML::Node& node, CliOptions& options, const std::string& context) {
+    if (!node) {
+        return;
+    }
+    if (!node.IsMap()) {
+        std::ostringstream oss;
+        oss << context << " service_modes must be a mapping";
+        throw std::runtime_error(oss.str());
+    }
+    if (const YAML::Node host = node["host"]) {
+        if (!host.IsScalar()) {
+            throw std::runtime_error(context + " service_modes.host must be a string");
+        }
+        options.host_mode = parse_mode_or_throw(host.as<std::string>(), context + " service_modes.host");
+    }
+    if (const YAML::Node nic = node["nic"]) {
+        if (!nic.IsScalar()) {
+            throw std::runtime_error(context + " service_modes.nic must be a string");
+        }
+        options.nic_mode = parse_mode_or_throw(nic.as<std::string>(), context + " service_modes.nic");
+    }
+}
+
+BatchDefaults parse_batch_defaults(const YAML::Node& node, const std::filesystem::path& base_dir) {
+    BatchDefaults defaults;
+    if (!node) {
+        return defaults;
+    }
+    if (!node.IsMap()) {
+        throw std::runtime_error("batch manifest defaults must be a mapping");
+    }
+    if (auto profile = read_optional_path(node, "profile", base_dir)) {
+        defaults.profile = std::move(profile);
+    }
+    if (auto workload = read_optional_path(node, "workload", base_dir)) {
+        defaults.workload = std::move(workload);
+    }
+    if (auto output = read_optional_path(node, "output", base_dir)) {
+        defaults.output = std::move(output);
+    }
+    if (auto output_dir = read_optional_path(node, "output_dir", base_dir)) {
+        defaults.output_dir = std::move(output_dir);
+    }
+    if (auto seed = read_optional_seed(node, "seed")) {
+        defaults.seed = seed;
+    }
+    if (auto policy = read_optional_string(node, "policy")) {
+        if (!policy::is_policy_supported(*policy)) {
+            throw std::runtime_error("batch manifest defaults policy '" + *policy + "' is not recognised");
+        }
+        defaults.policy_id = std::move(policy);
+    }
+    if (const YAML::Node service_modes = node["service_modes"]) {
+        if (!service_modes.IsMap()) {
+            throw std::runtime_error("batch manifest defaults.service_modes must be a mapping");
+        }
+        if (const YAML::Node host = service_modes["host"]) {
+            if (!host.IsScalar()) {
+                throw std::runtime_error("batch manifest defaults.service_modes.host must be a string");
+            }
+            defaults.host_mode = parse_mode_or_throw(host.as<std::string>(), "defaults.service_modes.host");
+        }
+        if (const YAML::Node nic = service_modes["nic"]) {
+            if (!nic.IsScalar()) {
+                throw std::runtime_error("batch manifest defaults.service_modes.nic must be a string");
+            }
+            defaults.nic_mode = parse_mode_or_throw(nic.as<std::string>(), "defaults.service_modes.nic");
+        }
+    }
+    return defaults;
+}
+
+CliOptions make_base_cli_options(const BatchDefaults& defaults) {
+    CliOptions options;
+    options.output_path = "run_metrics.json";
+    options.seed = defaults.seed.value_or(options.seed);
+    options.host_mode = defaults.host_mode.value_or(options.host_mode);
+    options.nic_mode = defaults.nic_mode.value_or(options.nic_mode);
+    if (defaults.policy_id) {
+        options.policy_id = *defaults.policy_id;
+    }
+    options.batch_mode = false;
+    options.batch_manifest_path.clear();
+    options.profile_path.clear();
+    options.workload_path.clear();
+    return options;
+}
+
+std::filesystem::path compute_output_path(const YAML::Node& run_node,
+                                          const BatchDefaults& defaults,
+                                          const std::filesystem::path& base_dir,
+                                          const std::string& run_name) {
+    if (auto explicit_output = read_optional_path(run_node, "output", base_dir)) {
+        return *explicit_output;
+    }
+    if (defaults.output) {
+        return *defaults.output;
+    }
+    std::filesystem::path target_dir;
+    if (auto run_dir = read_optional_path(run_node, "output_dir", base_dir)) {
+        target_dir = *run_dir;
+    } else if (defaults.output_dir) {
+        target_dir = *defaults.output_dir;
+    } else if (!base_dir.empty()) {
+        target_dir = base_dir;
+    }
+    if (target_dir.empty()) {
+        return std::filesystem::path(run_name + ".json");
+    }
+    return (target_dir / (run_name + ".json")).lexically_normal();
+}
+
+std::string ensure_run_name(const YAML::Node& run_node, std::size_t index) {
+    if (const YAML::Node name = run_node["name"]) {
+        if (!name.IsScalar()) {
+            throw std::runtime_error("batch run name must be a string");
+        }
+        return name.as<std::string>();
+    }
+    std::ostringstream oss;
+    oss << "run_" << index;
+    return oss.str();
+}
+
+BatchRunConfig parse_batch_run(const YAML::Node& run_node,
+                               const BatchDefaults& defaults,
+                               const std::filesystem::path& base_dir,
+                               std::size_t index) {
+    if (!run_node.IsMap()) {
+        std::ostringstream oss;
+        oss << "batch manifest runs[" << index << "] must be a mapping";
+        throw std::runtime_error(oss.str());
+    }
+
+    BatchRunConfig config;
+    config.name = ensure_run_name(run_node, index);
+    config.options = make_base_cli_options(defaults);
+
+    auto profile = read_optional_path(run_node, "profile", base_dir);
+    if (!profile && defaults.profile) {
+        profile = defaults.profile;
+    }
+    if (!profile) {
+        throw std::runtime_error("batch run '" + config.name + "' is missing a profile path");
+    }
+    config.options.profile_path = *profile;
+
+    auto workload = read_optional_path(run_node, "workload", base_dir);
+    if (!workload && defaults.workload) {
+        workload = defaults.workload;
+    }
+    if (!workload) {
+        throw std::runtime_error("batch run '" + config.name + "' is missing a workload path");
+    }
+    config.options.workload_path = *workload;
+
+    config.options.output_path = compute_output_path(run_node, defaults, base_dir, config.name);
+
+    if (auto seed = read_optional_seed(run_node, "seed")) {
+        config.options.seed = *seed;
+    }
+    if (auto policy = read_optional_string(run_node, "policy")) {
+        if (!policy::is_policy_supported(*policy)) {
+            throw std::runtime_error("batch run '" + config.name + "' has unknown policy '" + *policy + "'");
+        }
+        config.options.policy_id = *policy;
+    }
+    apply_service_modes_override(run_node["service_modes"], config.options,
+                                 "batch run '" + config.name + "'");
+
+    return config;
+}
+
+BatchManifestData parse_batch_manifest_data(const std::filesystem::path& manifest_path) {
+    YAML::Node root = YAML::LoadFile(manifest_path.string());
+    if (!root || !root.IsMap()) {
+        throw std::runtime_error("batch manifest must be a YAML mapping");
+    }
+
+    BatchManifestData manifest;
+    manifest.base_dir = manifest_path.parent_path();
+    if (const YAML::Node csv = root["csv"]) {
+        if (!csv.IsScalar()) {
+            throw std::runtime_error("batch manifest 'csv' field must be a string");
+        }
+        manifest.csv_path = resolve_relative_path(manifest.base_dir, csv.as<std::string>());
+    }
+
+    manifest.defaults = parse_batch_defaults(root["defaults"], manifest.base_dir);
+
+    const YAML::Node runs = root["runs"];
+    if (!runs || !runs.IsSequence() || runs.size() == 0) {
+        throw std::runtime_error("batch manifest must provide a non-empty 'runs' list");
+    }
+
+    manifest.runs.reserve(runs.size());
+    for (std::size_t idx = 0; idx < runs.size(); ++idx) {
+        manifest.runs.push_back(parse_batch_run(runs[idx], manifest.defaults, manifest.base_dir, idx));
+    }
+    return manifest;
 }
 
 SimTime min_arrival_time(const WorkloadSpec& spec) {
@@ -397,6 +689,7 @@ void print_usage(std::ostream& out) {
         << "Options:\n"
         << "  --output <path>          Output JSON report path (default: run_metrics.json)\n"
         << "  --config <path>          YAML manifest with profile/workload/policy defaults\n"
+        << "  --batch <path>           YAML batch manifest describing multiple runs (incompatible with other options)\n"
         << "  --seed <value>           RNG seed for stochastic service times (default: 1)\n"
         << "  --host-mode <mode>       Host service mode: deterministic|stochastic (default: deterministic)\n"
         << "  --nic-mode <mode>        NIC service mode: deterministic|stochastic (default: deterministic)\n"
@@ -502,10 +795,33 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
             }
             options.policy_id = std::move(value);
             policy_cli = true;
+        } else if (arg == "--batch") {
+            if (i + 1 >= argc) {
+                error = "--batch requires a path argument";
+                return false;
+            }
+            if (options.batch_mode) {
+                error = "--batch specified multiple times";
+                return false;
+            }
+            options.batch_mode = true;
+            options.batch_manifest_path = argv[++i];
         } else {
             error = "unrecognised argument: " + arg;
             return false;
         }
+    }
+
+    if (options.batch_mode) {
+        if (profile_cli || workload_cli || output_cli || seed_cli || host_cli || nic_cli || policy_cli || manifest_cli) {
+            error = "--batch cannot be combined with other CLI options";
+            return false;
+        }
+        if (options.batch_manifest_path.empty()) {
+            error = "--batch requires a manifest path";
+            return false;
+        }
+        return true;
     }
 
     if (manifest_cli) {
@@ -607,6 +923,76 @@ RunSummary run_simulation(const CliOptions& options) {
         .throughput_per_sec = throughput,
         .metrics = run_metrics,
     };
+}
+
+namespace {
+
+void write_batch_csv_header(std::ofstream& out) {
+    out << "run_name,profile,workload,policy,seed,host_mode,nic_mode,completed_tasks,makespan_us,"
+           "throughput_per_sec,mean_latency_us,p95_latency_us,p99_latency_us,peak_waiting_queue_depth,output_path\n";
+}
+
+void append_batch_csv_row(std::ofstream& out, const BatchRunSummary& result) {
+    const auto& aggregate = result.summary.metrics.aggregate;
+    const auto& latency = aggregate.latency_stats;
+    out << result.name << ","
+        << result.options.profile_path.string() << ","
+        << result.options.workload_path.string() << ","
+        << result.options.policy_id << ","
+        << result.options.seed << ","
+        << service_mode_to_string(result.options.host_mode) << ","
+        << service_mode_to_string(result.options.nic_mode) << ","
+        << result.summary.completed_tasks << ","
+        << format_double(result.summary.makespan_us) << ","
+        << format_double(result.summary.throughput_per_sec) << ","
+        << format_double(latency.mean) << ","
+        << format_double(latency.p95) << ","
+        << format_double(latency.p99) << ","
+        << aggregate.peak_waiting_queue_depth << ","
+        << result.options.output_path.string() << "\n";
+}
+
+} // namespace
+
+std::vector<BatchRunSummary> run_batch_manifest(const std::filesystem::path& manifest_path) {
+    const BatchManifestData manifest = parse_batch_manifest_data(manifest_path);
+
+    std::ofstream csv_stream;
+    bool csv_enabled = false;
+    if (manifest.csv_path) {
+        const auto parent = manifest.csv_path->parent_path();
+        if (!parent.empty()) {
+            std::error_code ec;
+            std::filesystem::create_directories(parent, ec);
+            if (ec) {
+                throw std::runtime_error("failed to create directory '" + parent.string() + "': " + ec.message());
+            }
+        }
+        const bool exists = std::filesystem::exists(*manifest.csv_path);
+        csv_stream.open(*manifest.csv_path, std::ios::app);
+        if (!csv_stream) {
+            throw std::runtime_error("failed to open batch CSV '" + manifest.csv_path->string() + "'");
+        }
+        if (!exists) {
+            write_batch_csv_header(csv_stream);
+        }
+        csv_enabled = true;
+    }
+
+    std::vector<BatchRunSummary> summaries;
+    summaries.reserve(manifest.runs.size());
+    for (const auto& run : manifest.runs) {
+        std::cout << "[batch] " << run.name << ": profile=" << run.options.profile_path
+                  << " workload=" << run.options.workload_path << "\n";
+        RunSummary summary = run_simulation(run.options);
+        summaries.push_back(BatchRunSummary{run.name, run.options, summary});
+        if (csv_enabled) {
+            append_batch_csv_row(csv_stream, summaries.back());
+            csv_stream.flush();
+        }
+    }
+
+    return summaries;
 }
 
 } // namespace nicloadoff::cli

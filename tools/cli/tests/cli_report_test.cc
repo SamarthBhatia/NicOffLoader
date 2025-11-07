@@ -144,5 +144,44 @@ int main() {
     std::filesystem::remove(manifest_output, ec);
     std::filesystem::remove(manifest_path, ec);
 
+    const std::filesystem::path batch_manifest = [&]() {
+        auto path = make_output_path();
+        return path.replace_extension(".yaml");
+    }();
+    const std::filesystem::path batch_output_dir = batch_manifest.parent_path() / "batch_outputs";
+    const std::filesystem::path batch_csv = batch_manifest.parent_path() / "batch_results.csv";
+    {
+        std::ofstream manifest(batch_manifest);
+        check(static_cast<bool>(manifest), "failed to open batch manifest");
+        manifest << "defaults:\n";
+        manifest << "  profile: " << profile.string() << "\n";
+        manifest << "  workload: " << workload.string() << "\n";
+        manifest << "  output_dir: " << batch_output_dir.string() << "\n";
+        manifest << "csv: " << batch_csv.string() << "\n";
+        manifest << "runs:\n";
+        manifest << "  - name: prefer-host\n";
+        manifest << "    policy: prefer-host\n";
+        manifest << "  - name: prefer-nic\n";
+        manifest << "    policy: prefer-nic\n";
+        manifest << "    seed: 9\n";
+    }
+
+    const auto batch_results = run_batch_manifest(batch_manifest);
+    check(batch_results.size() == 2, "expected two batch runs");
+    check(std::filesystem::exists(batch_csv), "expected batch csv to exist");
+
+    std::ifstream batch_csv_in(batch_csv);
+    std::string batch_csv_content((std::istreambuf_iterator<char>(batch_csv_in)), std::istreambuf_iterator<char>());
+    assert_contains(batch_csv_content, "prefer-host", "batch csv missing first run");
+    assert_contains(batch_csv_content, "prefer-nic", "batch csv missing second run");
+
+    for (const auto& run : batch_results) {
+        check(std::filesystem::exists(run.options.output_path), "expected batch output json");
+        std::filesystem::remove(run.options.output_path, ec);
+    }
+    std::filesystem::remove(batch_csv, ec);
+    std::filesystem::remove(batch_manifest, ec);
+    std::filesystem::remove_all(batch_output_dir, ec);
+
     return 0;
 }

@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <iosfwd>
 #include <string>
+#include <vector>
 
 namespace nicloadoff::cli {
 
@@ -21,6 +22,8 @@ struct CliOptions {
     ServiceTimeMode nic_mode{ServiceTimeMode::kDeterministic};
     std::string policy_id{"none"};
     bool show_help{false};
+    bool batch_mode{false};
+    std::filesystem::path batch_manifest_path;
 };
 
 struct RunSummary {
@@ -33,6 +36,13 @@ struct RunSummary {
 void print_usage(std::ostream& out);
 bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& error);
 RunSummary run_simulation(const CliOptions& options);
+struct BatchRunSummary {
+    std::string name;
+    CliOptions options;
+    RunSummary summary;
+};
+
+std::vector<BatchRunSummary> run_batch_manifest(const std::filesystem::path& manifest_path);
 
 } // namespace nicloadoff::cli
 
