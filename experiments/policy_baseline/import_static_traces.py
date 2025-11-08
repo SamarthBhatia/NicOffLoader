@@ -9,7 +9,7 @@ import pathlib
 from collections import defaultdict
 from typing import Dict, List
 
-TARGET_WORKLOADS = {"skew_dag", "skew_dag_heavy"}
+TARGET_WORKLOADS = {"skew_dag", "skew_dag_heavy", "skew_dag_zipf14"}
 
 
 def load_rows(csv_path: pathlib.Path) -> List[Dict[str, str]]:

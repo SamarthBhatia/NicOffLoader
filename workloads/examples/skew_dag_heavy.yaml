@@ -1,8 +1,8 @@
 schema_version: 0.1
 workload_name: skew_dag_heavy
 description: >
-  Heavier skew variant of the KV DAG workload where the db_lookup stage
-  carries 80/20-style heavy-tail instructions/bytes to stress host↔NIC transfers.
+  Heavier skew variant of the KV DAG workload where the db_lookup stage carries 80/20-style
+  heavy-tail instructions/bytes to stress host↔NIC transfers.
 tasks:
   - id: 901
     arrival_time: 0.0
@@ -70,7 +70,7 @@ tasks:
             placement_eligible:
               - host
               - nic
-            instructions: 0.5e7
+            instructions: 5e6
             bytes_in: 512
             bytes_out: 512
             demands:

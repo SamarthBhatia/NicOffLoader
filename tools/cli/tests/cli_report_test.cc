@@ -86,8 +86,8 @@ int main() {
     dag_options.output_path = make_output_path();
 
     const RunSummary dag_summary = run_simulation(dag_options);
-    check(dag_summary.completed_tasks == 2, "expected two DAG node completions");
-    check(dag_summary.metrics.tasks.size() == 2, "expected two DAG task metrics");
+    check(dag_summary.completed_tasks == 5, "expected five DAG node completions");
+    check(dag_summary.metrics.tasks.size() == 5, "expected five DAG task metrics");
     std::filesystem::remove(dag_options.output_path, ec);
 
     options.output_path = make_output_path();

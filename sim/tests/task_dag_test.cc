@@ -32,17 +32,28 @@ int main() {
             auto workload = nicloadoff::load_workload_from_file(fixture_path("skew_dag.yaml"));
             assert(workload.spec.dag_tasks.size() == 1);
             const auto& spec = workload.spec.dag_tasks[0];
+            assert(spec.id == 900);
             auto dag = nicloadoff::make_task_dag_from_spec(spec, ids);
-            assert(dag.nodes.size() == 2);
+            assert(dag.nodes.size() == 5);
             assert(dag.entry_nodes.size() == 1);
-            std::size_t host_index [[maybe_unused]] = dag.index_by_name.at("host_entry");
-            std::size_t nic_index [[maybe_unused]] = dag.index_by_name.at("nic_stage");
-            assert(dag.nodes[host_index].stage.service_time == 10.0);
-            assert(dag.nodes[nic_index].stage.service_time == 1.0);
+            const std::size_t parse_index [[maybe_unused]] = dag.index_by_name.at("parse_req");
+            const std::size_t hash_index [[maybe_unused]] = dag.index_by_name.at("hash_key");
+            const std::size_t auth_index [[maybe_unused]] = dag.index_by_name.at("auth_check");
+            const std::size_t lookup_index [[maybe_unused]] = dag.index_by_name.at("db_lookup");
+            const std::size_t serialize_index [[maybe_unused]] = dag.index_by_name.at("serialize_resp");
+            assert(dag.nodes[parse_index].successors.size() == 2);
+            assert(dag.nodes[parse_index].successors[0] == hash_index);
+            assert(dag.nodes[parse_index].successors[1] == auth_index);
+            assert(dag.nodes[hash_index].successors.size() == 1);
+            assert(dag.nodes[hash_index].successors[0] == lookup_index);
+            assert(dag.nodes[auth_index].successors.size() == 1);
+            assert(dag.nodes[auth_index].successors[0] == serialize_index);
+            assert(dag.nodes[lookup_index].successors.size() == 1);
+            assert(dag.nodes[lookup_index].successors[0] == serialize_index);
             auto order = nicloadoff::topological_order(dag);
-            assert(order.size() == 2);
-            assert(order[0] == host_index);
-            assert(order[1] == nic_index);
+            assert(order.size() == dag.nodes.size());
+            assert(order.front() == parse_index);
+            assert(order.back() == serialize_index);
         }
 
         {

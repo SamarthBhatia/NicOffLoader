@@ -1,11 +1,11 @@
 schema_version: 0.1
-workload_name: skew_dag
+workload_name: skew_dag_zipf14
 description: >
-  Skinny–wide–skinny DAG modeling a KV read path with a skewed lookup stage.
-  parse_req and hash_key fan into a dominant db_lookup node (skewable via service_profile),
-  while auth_check joins before serialize_resp to stress dependency pressure.
+  Zipf-heavy (alpha≈1.4) variant of the KV DAG workload. The db_lookup node inherits a long-tail
+  key distribution so host-pinned placement keeps re-touching the same hot rows (high host_link +
+  DRAM pressure) while NIC placement pushes lookups across the DPA fabric.
 tasks:
-  - id: 900
+  - id: 902
     arrival_time: 0.0
     dag:
       nodes:
@@ -34,34 +34,34 @@ tasks:
             placement_eligible:
               - host
               - nic
-            instructions: 2e7
+            instructions: 3e7
             bytes_in: 1536
             bytes_out: 512
             demands:
               - resource: host_cpu
-                units: 0.8
+                units: 1.0
           successors:
             - db_lookup
         - name: db_lookup
           stage:
             service_profile:
-              key: kv_lookup
+              key: kv_lookup_zipf14
               domain: host
               mode: stochastic
             placement_default: host
             placement_eligible:
               - host
               - nic
-            instructions: 6e7
-            bytes_in: 2048
-            bytes_out: 6144
+            instructions: 2.2e8
+            bytes_in: 4096
+            bytes_out: 32768
             demands:
               - resource: host_cpu
-                units: 1.5
+                units: 4.2
               - resource: host_dram
-                units: 2.0
+                units: 5.0
               - resource: host_link
-                units: 8192
+                units: 65536
           successors:
             - serialize_resp
         - name: auth_check
@@ -81,18 +81,18 @@ tasks:
             - serialize_resp
         - name: serialize_resp
           stage:
-            deterministic_service_time: 0.9
+            deterministic_service_time: 1.4
             placement_default: host
             placement_eligible:
               - host
               - nic
-            instructions: 1e7
-            bytes_in: 6144
-            bytes_out: 2048
+            instructions: 1.7e7
+            bytes_in: 32768
+            bytes_out: 4096
             demands:
               - resource: host_cpu
-                units: 0.7
+                units: 1.2
               - resource: host_dram
-                units: 0.3
+                units: 0.5
       entry_points:
         - parse_req

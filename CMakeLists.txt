@@ -17,6 +17,13 @@ if(NICLOADOFF_ENABLE_WARNINGS)
 endif()
 
 enable_testing()
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 add_subdirectory(sim)
 add_subdirectory(tools)
+
+add_test(
+    NAME policy_static_summary_test
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/tests/static_summary_regression_test.py
+)

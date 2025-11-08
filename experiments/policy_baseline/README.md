@@ -21,15 +21,18 @@ Paths inside the manifest are resolved relative to the manifest’s directory, s
 to reach repo-level fixtures. Each run entry inherits defaults for the profile, workload, seed, and
 output directory. Metadata fields declared under `defaults.metadata` (or overridden per run) are copied
 into the CSV so you can capture annotations like arrival models or load regimes. The example manifest
-ships both the baseline KV workload and a DAG-heavy `skew_dag` workload so policy comparisons cover
-single-path and dependency-driven scenarios; feel free to add new
-`runs:` entries for additional policies or workloads—the CLI validates policy names and will append new
-rows to the CSV automatically. The `summarize.py` helper reads the CSV and prints a quick comparison
+ships both the baseline KV workload and DAG-heavy `skew_dag` mixes (including the Zipf>1.2
+`skew_dag_zipf14` variant) so policy comparisons cover single-path and dependency-driven scenarios;
+feel free to add new `runs:` entries for additional policies or workloads—the CLI validates policy names
+and will append new rows to the CSV automatically. The `summarize.py` helper reads the CSV and prints a quick comparison
 table (sort by throughput by default or mean latency via `--sort mean_latency`), and now supports
 metadata-aware filtering/grouping (`--filter workload_label=skew_dag --group-by policy`) plus
 additional columns via `--columns`. `export_normalized.py`
-groups repeated runs and emits both a normalized CSV and (optionally) Parquet table (requires `pyarrow`).
+groups repeated runs, emits both a normalized CSV and (optionally) Parquet table (requires `pyarrow`),
+and can join the static placement summary (`--static-summary`, defaults to `results/dag_static_summary.csv`)
+to annotate each DAG workload with host/NIC baseline throughput and latency deltas.
 `plots/policy_baseline.py` consumes the normalized CSV to render throughput/latency comparison charts
 and stores them under `plots/generated/`. `import_static_traces.py` ingests the static placement sweep
 CSV and emits `dag_static_summary.csv`, capturing host- vs. NIC-pinned baselines for the skewed DAG
-scenarios so policy experiments can reference the fixed placements directly.
+scenarios so policy experiments can reference the fixed placements directly; the generated summary now
+feeds `tests/static_summary_regression_test.py`, which runs via `ctest` to keep those deltas pinned.

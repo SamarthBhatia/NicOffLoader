@@ -38,3 +38,17 @@ runs:
       placement: nic
       workload_label: skew_dag
       arrival_model: dag-burst
+  - name: dag-zipf14-prefer-host
+    workload: ../../workloads/examples/skew_dag_zipf14.yaml
+    policy: prefer-host
+    metadata:
+      placement: host
+      workload_label: skew_dag_zipf14
+      arrival_model: dag-burst
+  - name: dag-zipf14-prefer-nic
+    workload: ../../workloads/examples/skew_dag_zipf14.yaml
+    policy: prefer-nic
+    metadata:
+      placement: nic
+      workload_label: skew_dag_zipf14
+      arrival_model: dag-burst

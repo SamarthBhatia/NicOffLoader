@@ -52,24 +52,32 @@ int main() {
             auto workload = nicloadoff::load_workload_from_file(path);
             assert(workload.spec.tasks.empty());
             assert(workload.spec.dag_tasks.size() == 1);
-            const auto& graph [[maybe_unused]] = workload.spec.dag_tasks[0];
-            assert(graph.id == 501);
-            assert(graph.nodes.size() == 2);
+            const auto& graph = workload.spec.dag_tasks[0];
+            assert(graph.id == 900);
+            assert(graph.nodes.size() == 5);
             assert(graph.entry_points.size() == 1);
-            assert(graph.entry_points[0] == "host_entry");
-            const auto& host_node [[maybe_unused]] = graph.nodes[0];
-            assert(host_node.name == "host_entry");
-            assert(host_node.stage.deterministic_service_time.has_value());
-            assert(host_node.stage.deterministic_service_time.value() == 10.0);
-            assert(host_node.successors.size() == 1);
-            assert(host_node.successors[0] == "nic_stage");
+            assert(graph.entry_points[0] == "parse_req");
+            const auto& parse_node [[maybe_unused]] = graph.nodes[0];
+            assert(parse_node.name == "parse_req");
+            assert(parse_node.stage.deterministic_service_time.has_value());
+            assert(parse_node.stage.deterministic_service_time.value() == 0.8);
+            assert(parse_node.successors.size() == 2);
+            assert(parse_node.successors[0] == "hash_key");
+            assert(parse_node.successors[1] == "auth_check");
 
-            const auto& nic_node [[maybe_unused]] = graph.nodes[1];
-            assert(nic_node.name == "nic_stage");
-            assert(nic_node.stage.deterministic_service_time.has_value());
-            assert(nic_node.stage.deterministic_service_time.value() == 1.0);
-            assert(nic_node.stage.demands.size() == 2);
-            assert(nic_node.successors.empty());
+            const auto& hash_node [[maybe_unused]] = graph.nodes[1];
+            assert(hash_node.name == "hash_key");
+            assert(hash_node.stage.deterministic_service_time.has_value());
+            assert(hash_node.stage.deterministic_service_time.value() == 1.0);
+            assert(hash_node.successors.size() == 1);
+            assert(hash_node.successors[0] == "db_lookup");
+
+            const auto& lookup_node [[maybe_unused]] = graph.nodes[2];
+            assert(lookup_node.name == "db_lookup");
+            assert(!lookup_node.stage.deterministic_service_time.has_value());
+            assert(lookup_node.stage.service_profile.has_value());
+            assert(lookup_node.successors.size() == 1);
+            assert(lookup_node.successors[0] == "serialize_resp");
         }
 
         {
