@@ -1,10 +1,11 @@
 schema_version: 0.1
-workload_name: skew_dag_heavy
+workload_name: skew_dag_zipf18
 description: >
-  Heavier skew variant of the KV DAG workload where the db_lookup stage carries
-  80/20-style heavy-tail instructions/bytes to stress host↔NIC transfers.
+  More extreme Zipf-heavy (alpha≈1.8) variant that further amplifies db_lookup
+  CPU/link pressure so host-pinned runs thrash whereas NIC placement keeps
+  latency flat.
 tasks:
-  - id: 901
+  - id: 903
     arrival_time: 0.0
     dag:
       nodes:
@@ -33,34 +34,34 @@ tasks:
             placement_eligible:
               - host
               - nic
-            instructions: 2.5e7
+            instructions: 3.5e7
             bytes_in: 1536
             bytes_out: 512
             demands:
               - resource: host_cpu
-                units: 0.9
+                units: 1.1
           successors:
             - db_lookup
         - name: db_lookup
           stage:
             service_profile:
-              key: kv_lookup
+              key: kv_lookup_zipf18
               domain: host
               mode: stochastic
             placement_default: host
             placement_eligible:
               - host
               - nic
-            instructions: 1.2e8
+            instructions: 3.2e8
             bytes_in: 4096.0
-            bytes_out: 16384.0
+            bytes_out: 49152.0
             demands:
               - resource: host_cpu
-                units: 2.5
+                units: 5.0
               - resource: host_dram
-                units: 3.5
+                units: 6.0
               - resource: host_link
-                units: 16384.0
+                units: 131072.0
           successors:
             - serialize_resp
         - name: auth_check
@@ -80,18 +81,18 @@ tasks:
             - serialize_resp
         - name: serialize_resp
           stage:
-            deterministic_service_time: 1.2
+            deterministic_service_time: 1.6
             placement_default: host
             placement_eligible:
               - host
               - nic
-            instructions: 1.5e7
-            bytes_in: 16384.0
+            instructions: 2e7
+            bytes_in: 49152.0
             bytes_out: 4096.0
             demands:
               - resource: host_cpu
-                units: 0.9
+                units: 1.4
               - resource: host_dram
-                units: 0.4
+                units: 0.6
       entry_points:
         - parse_req

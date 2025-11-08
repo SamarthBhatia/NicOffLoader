@@ -1,9 +1,10 @@
 schema_version: 0.1
 workload_name: skew_dag_zipf14
 description: >
-  Zipf-heavy (alpha≈1.4) variant of the KV DAG workload. The db_lookup node inherits a long-tail
-  key distribution so host-pinned placement keeps re-touching the same hot rows (high host_link +
-  DRAM pressure) while NIC placement pushes lookups across the DPA fabric.
+  Zipf-heavy (alpha≈1.4) variant of the KV DAG workload. The db_lookup node
+  inherits a long-tail key distribution so host-pinned placement keeps
+  re-touching the same hot rows (high host_link + DRAM pressure) while NIC
+  placement pushes lookups across the DPA fabric.
 tasks:
   - id: 902
     arrival_time: 0.0
@@ -53,15 +54,15 @@ tasks:
               - host
               - nic
             instructions: 2.2e8
-            bytes_in: 4096
-            bytes_out: 32768
+            bytes_in: 4096.0
+            bytes_out: 32768.0
             demands:
               - resource: host_cpu
                 units: 4.2
               - resource: host_dram
                 units: 5.0
               - resource: host_link
-                units: 65536
+                units: 65536.0
           successors:
             - serialize_resp
         - name: auth_check
@@ -87,8 +88,8 @@ tasks:
               - host
               - nic
             instructions: 1.7e7
-            bytes_in: 32768
-            bytes_out: 4096
+            bytes_in: 32768.0
+            bytes_out: 4096.0
             demands:
               - resource: host_cpu
                 units: 1.2

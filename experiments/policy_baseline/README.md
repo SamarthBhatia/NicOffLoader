@@ -22,7 +22,8 @@ to reach repo-level fixtures. Each run entry inherits defaults for the profile, 
 output directory. Metadata fields declared under `defaults.metadata` (or overridden per run) are copied
 into the CSV so you can capture annotations like arrival models or load regimes. The example manifest
 ships both the baseline KV workload and DAG-heavy `skew_dag` mixes (including the Zipf>1.2
-`skew_dag_zipf14` variant) so policy comparisons cover single-path and dependency-driven scenarios;
+`skew_dag_zipf14` and even harsher `skew_dag_zipf18` variants) so policy comparisons cover single-path
+and dependency-driven scenarios;
 feel free to add new `runs:` entries for additional policies or workloads—the CLI validates policy names
 and will append new rows to the CSV automatically. The `summarize.py` helper reads the CSV and prints a quick comparison
 table (sort by throughput by default or mean latency via `--sort mean_latency`), and now supports

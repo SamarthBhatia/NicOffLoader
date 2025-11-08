@@ -28,27 +28,63 @@ runs:
     workload: ../../workloads/examples/skew_dag.yaml
     policy: prefer-host
     metadata:
-      placement: host
       workload_label: skew_dag
       arrival_model: dag-burst
+      background_load: low
+      placement: host
   - name: dag-prefer-nic
     workload: ../../workloads/examples/skew_dag.yaml
     policy: prefer-nic
     metadata:
-      placement: nic
       workload_label: skew_dag
       arrival_model: dag-burst
+      background_load: low
+      placement: nic
+  - name: dag-heavy-prefer-host
+    workload: ../../workloads/examples/skew_dag_heavy.yaml
+    policy: prefer-host
+    metadata:
+      workload_label: skew_dag_heavy
+      arrival_model: dag-burst
+      background_load: low
+      placement: host
+  - name: dag-heavy-prefer-nic
+    workload: ../../workloads/examples/skew_dag_heavy.yaml
+    policy: prefer-nic
+    metadata:
+      workload_label: skew_dag_heavy
+      arrival_model: dag-burst
+      background_load: low
+      placement: nic
   - name: dag-zipf14-prefer-host
     workload: ../../workloads/examples/skew_dag_zipf14.yaml
     policy: prefer-host
     metadata:
-      placement: host
       workload_label: skew_dag_zipf14
       arrival_model: dag-burst
+      background_load: low
+      placement: host
   - name: dag-zipf14-prefer-nic
     workload: ../../workloads/examples/skew_dag_zipf14.yaml
     policy: prefer-nic
     metadata:
-      placement: nic
       workload_label: skew_dag_zipf14
       arrival_model: dag-burst
+      background_load: low
+      placement: nic
+  - name: dag-zipf18-prefer-host
+    workload: ../../workloads/examples/skew_dag_zipf18.yaml
+    policy: prefer-host
+    metadata:
+      workload_label: skew_dag_zipf18
+      arrival_model: dag-burst
+      background_load: low
+      placement: host
+  - name: dag-zipf18-prefer-nic
+    workload: ../../workloads/examples/skew_dag_zipf18.yaml
+    policy: prefer-nic
+    metadata:
+      workload_label: skew_dag_zipf18
+      arrival_model: dag-burst
+      background_load: low
+      placement: nic

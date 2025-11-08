@@ -2,8 +2,9 @@ schema_version: 0.1
 workload_name: skew_dag
 description: >
   Skinny–wide–skinny DAG modeling a KV read path with a skewed lookup stage.
-  parse_req and hash_key fan into a dominant db_lookup node (skewable via service_profile),
-  while auth_check joins before serialize_resp to stress dependency pressure.
+  parse_req and hash_key fan into a dominant db_lookup node (skewable via
+  service_profile), while auth_check joins before serialize_resp to stress
+  dependency pressure.
 tasks:
   - id: 900
     arrival_time: 0.0

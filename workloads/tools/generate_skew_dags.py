@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Generate skewed DAG workload variants with consistent metadata."""
+"""Generate skewed DAG workload variants and refresh manifest/batch configs."""
 
 from __future__ import annotations
 
 import argparse
 import copy
+import json
 import pathlib
 import textwrap
-from typing import Dict, Iterable, List, Mapping
+from typing import Dict, Iterable, List, Mapping, Sequence
 
 BASE_TEMPLATE = {
     "schema_version": "0.1",
@@ -108,109 +109,14 @@ BASE_TEMPLATE = {
     ],
 }
 
-VariantConfig = Dict[str, object]
-
-VARIANTS: Mapping[str, VariantConfig] = {
-    "skew_dag": {
-        "task_id": 900,
-        "workload_name": "skew_dag",
-        "description": """\
-Skinny–wide–skinny DAG modeling a KV read path with a skewed lookup stage.
-parse_req and hash_key fan into a dominant db_lookup node (skewable via service_profile),
-while auth_check joins before serialize_resp to stress dependency pressure.""",
-    },
-    "skew_dag_heavy": {
-        "task_id": 901,
-        "workload_name": "skew_dag_heavy",
-        "description": """\
-Heavier skew variant of the KV DAG workload where the db_lookup stage carries 80/20-style
-heavy-tail instructions/bytes to stress host↔NIC transfers.""",
-        "overrides": {
-            "hash_key": {
-                "stage": {
-                    "instructions": 2.5e7,
-                    "demands": [
-                        {"resource": "host_cpu", "units": 0.9},
-                    ],
-                }
-            },
-            "db_lookup": {
-                "stage": {
-                    "instructions": 1.2e8,
-                    "bytes_in": 4096,
-                    "bytes_out": 16384,
-                    "demands": [
-                        {"resource": "host_cpu", "units": 2.5},
-                        {"resource": "host_dram", "units": 3.5},
-                        {"resource": "host_link", "units": 16384},
-                    ],
-                }
-            },
-            "serialize_resp": {
-                "stage": {
-                    "deterministic_service_time": 1.2,
-                    "instructions": 1.5e7,
-                    "bytes_in": 16384,
-                    "bytes_out": 4096,
-                    "demands": [
-                        {"resource": "host_cpu", "units": 0.9},
-                        {"resource": "host_dram", "units": 0.4},
-                    ],
-                }
-            },
-        },
-    },
-    "skew_dag_zipf14": {
-        "task_id": 902,
-        "workload_name": "skew_dag_zipf14",
-        "description": """\
-Zipf-heavy (alpha≈1.4) variant of the KV DAG workload. The db_lookup node inherits a long-tail
-key distribution so host-pinned placement keeps re-touching the same hot rows (high host_link +
-DRAM pressure) while NIC placement pushes lookups across the DPA fabric.""",
-        "overrides": {
-            "hash_key": {
-                "stage": {
-                    "instructions": 3.0e7,
-                    "demands": [
-                        {"resource": "host_cpu", "units": 1.0},
-                    ],
-                }
-            },
-            "db_lookup": {
-                "stage": {
-                    "service_profile": {
-                        "key": "kv_lookup_zipf14",
-                        "domain": "host",
-                        "mode": "stochastic",
-                    },
-                    "instructions": 2.2e8,
-                    "bytes_in": 4096,
-                    "bytes_out": 32768,
-                    "demands": [
-                        {"resource": "host_cpu", "units": 4.2},
-                        {"resource": "host_dram", "units": 5.0},
-                        {"resource": "host_link", "units": 65536},
-                    ],
-                }
-            },
-            "serialize_resp": {
-                "stage": {
-                    "deterministic_service_time": 1.4,
-                    "instructions": 1.7e7,
-                    "bytes_in": 32768,
-                    "bytes_out": 4096,
-                    "demands": [
-                        {"resource": "host_cpu", "units": 1.2},
-                        {"resource": "host_dram", "units": 0.5},
-                    ],
-                }
-            },
-        },
-    },
-}
+CONFIG_PATH = pathlib.Path(__file__).with_name("skew_dag_config.json")
 
 
-def format_number(value: object) -> str:
+def format_scalar(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return "null"
     if isinstance(value, int):
         return str(value)
     if isinstance(value, float):
@@ -222,97 +128,89 @@ def format_number(value: object) -> str:
         elif "." not in text:
             text = f"{text}.0"
         return text
-    return str(value)
+    assert isinstance(value, str)
+    if value == "" or value[0].isspace() or value[-1].isspace() or any(c in value for c in (":", "#", "\"")):
+        escaped = value.replace('"', '\\"')
+        return f'"{escaped}"'
+    return value
 
 
-def emit(lines: List[str], indent: int, text: str) -> None:
-    lines.append(f"{' ' * indent}{text}")
+def dump_yaml(value: object, indent: int = 0) -> List[str]:
+    pad = " " * indent
+    if isinstance(value, dict):
+        lines: List[str] = []
+        for key, child in value.items():
+            if isinstance(child, str) and "\n" in child:
+                lines.append(f"{pad}{key}: >")
+                for block_line in child.splitlines():
+                    lines.append(f"{' ' * (indent + 2)}{block_line}")
+                continue
+            child_lines = dump_yaml(child, indent + 2)
+            complex_child = isinstance(child, (dict, list))
+            if complex_child:
+                lines.append(f"{pad}{key}:")
+                lines.extend(child_lines)
+            else:
+                lines.append(f"{pad}{key}: {child_lines[0].strip()}")
+                lines.extend(child_lines[1:])
+        if not lines:
+            lines.append(f"{pad}{{}}")
+        return lines
+    if isinstance(value, list):
+        if not value:
+            return [f"{pad}[]"]
+        lines: List[str] = []
+        for item in value:
+            child_lines = dump_yaml(item, indent + 2)
+            if not child_lines:
+                lines.append(f"{pad}-")
+                continue
+            lines.append(f"{pad}- {child_lines[0].strip()}")
+            lines.extend(child_lines[1:])
+        return lines
+    if isinstance(value, str) and "\n" in value:
+        lines = [f"{pad}>"]
+        for line in value.splitlines():
+            lines.append(f"{' ' * (indent + 2)}{line}")
+        return lines
+    return [f"{pad}{format_scalar(value)}"]
 
 
-def render_stage(lines: List[str], stage: Dict[str, object], indent: int) -> None:
-    emit(lines, indent, "stage:")
-    order = [
-        "deterministic_service_time",
-        "service_profile",
-        "placement_default",
-        "placement_eligible",
-        "instructions",
-        "bytes_in",
-        "bytes_out",
-        "demands",
-    ]
-    for key in order:
-        if key not in stage:
-            continue
-        value = stage[key]
-        if key == "service_profile":
-            emit(lines, indent + 2, "service_profile:")
-            for sub_key in ("key", "domain", "mode"):
-                if sub_key in value:
-                    emit(lines, indent + 4, f"{sub_key}: {value[sub_key]}")
-        elif key == "placement_eligible":
-            emit(lines, indent + 2, "placement_eligible:")
-            for entry in value:
-                emit(lines, indent + 4, f"- {entry}")
-        elif key == "demands":
-            emit(lines, indent + 2, "demands:")
-            for demand in value:
-                emit(lines, indent + 4, f"- resource: {demand['resource']}")
-                emit(lines, indent + 6, f"units: {format_number(demand['units'])}")
-        else:
-            emit(lines, indent + 2, f"{key}: {format_number(value)}")
-
-
-def render_variant(spec: Dict[str, object]) -> str:
-    lines: List[str] = []
-    emit(lines, 0, "schema_version: 0.1")
-    emit(lines, 0, f"workload_name: {spec['workload_name']}")
-    emit(lines, 0, "description: >")
-    for line in spec["description"].splitlines():
-        emit(lines, 2, line)
-    task = spec["tasks"][0]
-    emit(lines, 0, "tasks:")
-    emit(lines, 2, f"- id: {task['id']}")
-    emit(lines, 4, "arrival_time: 0.0")
-    emit(lines, 4, "dag:")
-    emit(lines, 6, "nodes:")
-    for node in task["dag"]["nodes"]:
-        emit(lines, 8, f"- name: {node['name']}")
-        render_stage(lines, node["stage"], 10)
-        successors = node.get("successors", [])
-        if successors:
-            emit(lines, 10, "successors:")
-            for succ in successors:
-                emit(lines, 12, f"- {succ}")
-    emit(lines, 6, "entry_points:")
-    for entry in task["dag"]["entry_points"]:
-        emit(lines, 8, f"- {entry}")
-    return "\n".join(lines) + "\n"
+def dump_yaml_text(value: object) -> str:
+    return "\n".join(dump_yaml(value)) + "\n"
 
 
 def apply_override(node: Dict[str, object], override: Mapping[str, object]) -> None:
-    if "stage" in override:
-        stage = node["stage"]  # type: ignore[index]
-        assert isinstance(stage, dict)
-        for key, value in override["stage"].items():  # type: ignore[union-attr]
+    stage = node["stage"]  # type: ignore[index]
+    assert isinstance(stage, dict)
+    if "set" in override:
+        for key, value in override["set"].items():  # type: ignore[union-attr]
             if key == "demands":
                 stage[key] = [dict(entry) for entry in value]  # type: ignore[assignment]
-            elif key == "service_profile":
-                stage[key] = dict(value)  # type: ignore[assignment]
             else:
                 stage[key] = value  # type: ignore[assignment]
+    if "scale" in override:
+        scale_spec = override["scale"]  # type: ignore[assignment]
+        for key, factor in scale_spec.items():
+            if key == "demands":
+                for demand in stage.get("demands", []):
+                    res = demand["resource"]
+                    if res in factor:
+                        demand["units"] = demand["units"] * factor[res]
+            else:
+                if key in stage and isinstance(stage[key], (int, float)):
+                    stage[key] = stage[key] * factor
     if "successors" in override:
         node["successors"] = list(override["successors"])  # type: ignore[assignment]
 
 
-def build_variant(name: str) -> Dict[str, object]:
-    variant = VARIANTS[name]
+def build_variant(variant: Mapping[str, object]) -> Dict[str, object]:
     spec = copy.deepcopy(BASE_TEMPLATE)
     spec["workload_name"] = variant["workload_name"]
     spec["description"] = textwrap.dedent(variant["description"]).strip()
     task = spec["tasks"][0]
     task["id"] = variant["task_id"]
-    overrides = variant.get("overrides", {})
+    overrides = variant.get("stages", {})
     if overrides:
         node_lookup = {node["name"]: node for node in task["dag"]["nodes"]}
         for node_name, node_override in overrides.items():
@@ -322,15 +220,73 @@ def build_variant(name: str) -> Dict[str, object]:
 
 def write_variant(spec: Dict[str, object], output_path: pathlib.Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    yaml_text = render_variant(spec)
+    yaml_text = dump_yaml_text(spec)
     output_path.write_text(yaml_text)
     print(f"[skew-generator] wrote {output_path}")
+
+
+def load_config(path: pathlib.Path) -> Dict[str, object]:
+    with path.open() as handle:
+        return json.load(handle)
+
+
+def update_manifest(config: Mapping[str, object], variants: Sequence[Mapping[str, object]]) -> None:
+    manifest_cfg = config["placement_manifest"]
+    workloads = list(manifest_cfg.get("static_workloads", []))
+    for variant in variants:
+        entry_cfg = variant.get("manifest_entry")
+        if not entry_cfg:
+            continue
+        entry = dict(entry_cfg)
+        entry.setdefault("workload", f"workloads/examples/{variant['name']}.yaml")
+        workloads.append(entry)
+    manifest = {
+        "profile": manifest_cfg["profile"],
+        "binary": manifest_cfg["binary"],
+        "csv_path": manifest_cfg["csv_path"],
+        "results_dir": manifest_cfg["results_dir"],
+        "placement_modes": manifest_cfg.get("placement_modes", []),
+        "workloads": workloads,
+    }
+    manifest_path = pathlib.Path("experiments/placement_baseline/manifest.yaml")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    print(f"[skew-generator] updated {manifest_path}")
+
+
+def update_policy_batch(config: Mapping[str, object], variants: Sequence[Mapping[str, object]]) -> None:
+    batch_cfg = config["policy_batch"]
+    defaults = batch_cfg["defaults"]
+    default_metadata = defaults.get("metadata", {})
+    runs = list(batch_cfg.get("static_runs", []))
+    for variant in variants:
+        for run in variant.get("batch_runs", []):
+            metadata = dict(default_metadata)
+            metadata.update(variant.get("metadata", {}))
+            metadata.update(run.get("metadata", {}))
+            run_entry = {
+                "name": run["name"],
+                "workload": run.get("workload", f"../../workloads/examples/{variant['name']}.yaml"),
+                "policy": run["policy"],
+                "metadata": metadata,
+            }
+            if "service_modes" in run:
+                run_entry["service_modes"] = run["service_modes"]
+            runs.append(run_entry)
+    batch = {
+        "defaults": defaults,
+        "csv": batch_cfg["csv"],
+        "runs": runs,
+    }
+    batch_path = pathlib.Path("experiments/policy_baseline/batch.yaml")
+    batch_path.write_text(dump_yaml_text(batch))
+    print(f"[skew-generator] updated {batch_path}")
 
 
 def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     default_output = pathlib.Path(__file__).resolve().parents[1] / "examples"
     parser.add_argument("--output-dir", type=pathlib.Path, default=default_output, help="Destination directory")
+    parser.add_argument("--config", type=pathlib.Path, default=CONFIG_PATH, help="Config JSON describing variants")
     parser.add_argument(
         "--variant",
         action="append",
@@ -338,21 +294,34 @@ def main(argv: Iterable[str] | None = None) -> int:
         help="Variant(s) to generate (default: all). Can be repeated.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print YAML to stdout instead of writing files")
+    parser.add_argument("--skip-manifests", action="store_true", help="Do not rewrite manifest/batch files")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
-    variants = args.variants or list(VARIANTS.keys())
-    unknown = [name for name in variants if name not in VARIANTS]
+    config = load_config(args.config)
+    config_variants = {variant["name"]: variant for variant in config["variants"]}
+    variant_names = args.variants or list(config_variants.keys())
+    unknown = [name for name in variant_names if name not in config_variants]
     if unknown:
         raise SystemExit(f"Unknown variant(s): {', '.join(unknown)}")
 
-    for name in variants:
-        spec = build_variant(name)
-        output_path = args.output_dir / f"{name}.yaml"
+    selected_variants = [config_variants[name] for name in variant_names]
+    generated_specs = []
+    for variant in selected_variants:
+        spec = build_variant(variant)
+        generated_specs.append(variant)
+        output_path = args.output_dir / f"{variant['name']}.yaml"
         if args.dry_run:
-            print(f"# --- {name} ({output_path}) ---")
-            print(render_variant(spec))
+            print(f"# --- {variant['name']} ({output_path}) ---")
+            print(dump_yaml_text(spec))
         else:
             write_variant(spec, output_path)
+
+    if args.dry_run:
+        return 0
+
+    if not args.skip_manifests:
+        update_manifest(config, config["variants"])
+        update_policy_batch(config, config["variants"])
     return 0
 
 

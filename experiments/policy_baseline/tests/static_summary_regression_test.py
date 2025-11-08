@@ -20,6 +20,7 @@ EXPECTED: Dict[str, Expectations] = {
     "skew_dag": Expectations(min_throughput_delta=4_000.0, min_latency_delta=0.1),
     "skew_dag_heavy": Expectations(min_throughput_delta=4_000.0, min_latency_delta=0.1),
     "skew_dag_zipf14": Expectations(min_throughput_delta=12_000.0, min_latency_delta=0.3),
+    "skew_dag_zipf18": Expectations(min_throughput_delta=18_000.0, min_latency_delta=0.5),
 }
 
 PLACEMENTS = ("host_pinned", "nic_pinned")
