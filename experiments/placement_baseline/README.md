@@ -24,12 +24,20 @@ scripts consume when generating throughput/latency figures and comparing static 
    ```bash
    python3 plots/placement_baseline.py
    ```
+4. Print a quick tabular summary (metadata columns like `arrival_label`/`zipf_alpha` are included automatically):
+   ```bash
+   python3 experiments/placement_baseline/summarize.py
+   ```
 
 `run.py` will create `experiments/placement_baseline/results/placement_sweep.csv` (columns now include
 mean/p50/p95/p99 latency, peak waiting-queue depth, the placement mode, plus any metadata keys declared
-in `manifest.yaml` such as `arrival_label` and `zipf_alpha`) and stash the JSON
+in `manifest.yaml` such as `arrival_label`, `background_load`, and `zipf_alpha`; `summarize.py` surfaces those metadata
+columns by default when printing the table) and stash the JSON
 summaries produced by `placement_benchmark` alongside it. The manifest can enumerate multiple
 `placement_modes` per workload entry so the sweep emits HostPinned vs. NICPinned comparisons in a
 single pass (the skewed DAG scenario demonstrates this). The plotting step reads the CSV and writes
 figures to `plots/generated/`. PyYAML is optional: when it is not installed the script falls back to
 loading `manifest.yaml` as JSON, so keep custom manifests JSON-compatible or install PyYAML.
+When you adjust skew tiers in `workloads/tools/skew_dag_config.json`, rerun
+`python3 workloads/tools/generate_skew_dags.py` to regenerate the example workloads along with the
+placement manifest so the new `light`/`heavy` metadata flows through automatically.

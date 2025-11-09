@@ -6,7 +6,9 @@
 #include "nicloadoff/sim_types.hh"
 
 #include <cstddef>
+#include <map>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace nicloadoff {
@@ -45,6 +47,7 @@ struct PolicyStateSnapshot {
     std::vector<TaskId> waiting_task_order;
     std::size_t active_task_count{0};
     std::optional<std::size_t> admission_limit;
+    std::map<std::string, std::string> scenario_metadata;
 };
 
 } // namespace nicloadoff

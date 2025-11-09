@@ -108,7 +108,8 @@
           "seeds": [1],
           "placement_modes": ["host_pinned", "nic_pinned"],
           "metadata": {
-            "arrival_label": "baseline"
+            "arrival_label": "baseline",
+            "background_load": "light"
           }
         },
         {
@@ -118,7 +119,8 @@
           "seeds": [1],
           "placement_modes": ["host_pinned", "nic_pinned"],
           "metadata": {
-            "arrival_label": "stress"
+            "arrival_label": "stress",
+            "background_load": "heavy"
           }
         }
       ]
@@ -157,7 +159,8 @@
           "seeds": [1],
           "placement_modes": ["host_pinned", "nic_pinned"],
           "metadata": {
-            "arrival_label": "baseline"
+            "arrival_label": "baseline",
+            "background_load": "light"
           }
         },
         {
@@ -167,7 +170,8 @@
           "seeds": [1],
           "placement_modes": ["host_pinned", "nic_pinned"],
           "metadata": {
-            "arrival_label": "stress"
+            "arrival_label": "stress",
+            "background_load": "heavy"
           }
         }
       ],
@@ -258,7 +262,8 @@
           "seeds": [1],
           "placement_modes": ["host_pinned", "nic_pinned"],
           "metadata": {
-            "arrival_label": "baseline"
+            "arrival_label": "baseline",
+            "background_load": "light"
           }
         },
         {
@@ -268,7 +273,8 @@
           "seeds": [1],
           "placement_modes": ["host_pinned", "nic_pinned"],
           "metadata": {
-            "arrival_label": "stress"
+            "arrival_label": "stress",
+            "background_load": "heavy"
           }
         }
       ],
@@ -364,7 +370,8 @@
           "seeds": [1],
           "placement_modes": ["host_pinned", "nic_pinned"],
           "metadata": {
-            "arrival_label": "baseline"
+            "arrival_label": "baseline",
+            "background_load": "light"
           }
         },
         {
@@ -374,7 +381,8 @@
           "seeds": [1],
           "placement_modes": ["host_pinned", "nic_pinned"],
           "metadata": {
-            "arrival_label": "stress"
+            "arrival_label": "stress",
+            "background_load": "heavy"
           }
         }
       ],

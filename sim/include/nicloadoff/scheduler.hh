@@ -7,6 +7,7 @@
 #include "nicloadoff/task.hh"
 
 #include <deque>
+#include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -52,6 +53,7 @@ class BasicScheduler {
 
     [[nodiscard]] SimTime current_time() const noexcept { return current_time_; }
     void set_policy_hook(policy::PolicyHook* hook) noexcept { policy_hook_ = hook; }
+    void set_policy_metadata(std::map<std::string, std::string> metadata) { scenario_metadata_ = std::move(metadata); }
     [[nodiscard]] const std::vector<TaskId>& completed_tasks() const noexcept { return completed_tasks_; }
     [[nodiscard]] const ResourcePool& resource_pool() const noexcept { return resources_; }
     [[nodiscard]] std::optional<ScheduledEvent> last_event() const noexcept { return last_event_; }
@@ -102,6 +104,7 @@ class BasicScheduler {
     std::optional<ScheduledEvent> last_event_;
     std::size_t events_processed_{0};
     std::vector<TaskMetrics> completed_metrics_;
+    std::map<std::string, std::string> scenario_metadata_;
 
     void handle_event(const ScheduledEvent& event);
     void handle_task_arrival(TaskId id, SimTime timestamp);

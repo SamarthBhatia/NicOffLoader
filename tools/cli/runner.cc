@@ -432,7 +432,8 @@ BatchRunConfig parse_batch_run(const YAML::Node& run_node,
     for (const auto& [key, _] : metadata) {
         metadata_keys.insert(key);
     }
-    config.metadata = std::move(metadata);
+    config.metadata = metadata;
+    config.options.metadata = std::move(metadata);
 
     return config;
 }
@@ -934,6 +935,7 @@ RunSummary run_simulation(const CliOptions& options) {
     DagSubmissionController dag_controller = DagSubmissionController::from_spec(workload, inventory.ids);
     const auto tasks = make_tasks_from_spec(workload, inventory.ids);
     BasicScheduler scheduler(std::move(inventory.pool), &service_model);
+    scheduler.set_policy_metadata(options.metadata);
 
     std::unique_ptr<policy::PolicyHook> policy_hook = policy::make_policy_hook(options.policy_id);
     if (policy_hook) {

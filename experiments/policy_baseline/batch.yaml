@@ -26,83 +26,163 @@ runs:
     policy: limit-active-1
     metadata:
       placement: host
-  - name: dag-prefer-host
+  - name: dag-prefer-host-baseline
     workload: ../../workloads/examples/skew_dag.yaml
     policy: prefer-host
     metadata:
       workload_label: skew_dag
       arrival_model: dag-burst
-      background_load: low
+      background_load: light
       zipf_alpha: 1.0
-      arrival_label: deterministic
+      arrival_label: baseline
       placement: host
-  - name: dag-prefer-nic
+  - name: dag-prefer-nic-baseline
     workload: ../../workloads/examples/skew_dag.yaml
     policy: prefer-nic
     metadata:
       workload_label: skew_dag
       arrival_model: dag-burst
-      background_load: low
+      background_load: light
       zipf_alpha: 1.0
-      arrival_label: deterministic
+      arrival_label: baseline
       placement: nic
-  - name: dag-heavy-prefer-host
+  - name: dag-prefer-host-stress
+    workload: ../../workloads/examples/skew_dag.yaml
+    policy: prefer-host
+    metadata:
+      workload_label: skew_dag
+      arrival_model: dag-burst
+      background_load: heavy
+      zipf_alpha: 1.0
+      arrival_label: stress
+      placement: host
+  - name: dag-prefer-nic-stress
+    workload: ../../workloads/examples/skew_dag.yaml
+    policy: prefer-nic
+    metadata:
+      workload_label: skew_dag
+      arrival_model: dag-burst
+      background_load: heavy
+      zipf_alpha: 1.0
+      arrival_label: stress
+      placement: nic
+  - name: dag-heavy-prefer-host-baseline
     workload: ../../workloads/examples/skew_dag_heavy.yaml
     policy: prefer-host
     metadata:
       workload_label: skew_dag_heavy
       arrival_model: dag-burst
-      background_load: low
+      background_load: light
       zipf_alpha: 1.2
-      arrival_label: deterministic
+      arrival_label: baseline
       placement: host
-  - name: dag-heavy-prefer-nic
+  - name: dag-heavy-prefer-nic-baseline
     workload: ../../workloads/examples/skew_dag_heavy.yaml
     policy: prefer-nic
     metadata:
       workload_label: skew_dag_heavy
       arrival_model: dag-burst
-      background_load: low
+      background_load: light
       zipf_alpha: 1.2
-      arrival_label: deterministic
+      arrival_label: baseline
       placement: nic
-  - name: dag-zipf14-prefer-host
+  - name: dag-heavy-prefer-host-stress
+    workload: ../../workloads/examples/skew_dag_heavy.yaml
+    policy: prefer-host
+    metadata:
+      workload_label: skew_dag_heavy
+      arrival_model: dag-burst
+      background_load: heavy
+      zipf_alpha: 1.2
+      arrival_label: stress
+      placement: host
+  - name: dag-heavy-prefer-nic-stress
+    workload: ../../workloads/examples/skew_dag_heavy.yaml
+    policy: prefer-nic
+    metadata:
+      workload_label: skew_dag_heavy
+      arrival_model: dag-burst
+      background_load: heavy
+      zipf_alpha: 1.2
+      arrival_label: stress
+      placement: nic
+  - name: dag-zipf14-prefer-host-baseline
     workload: ../../workloads/examples/skew_dag_zipf14.yaml
     policy: prefer-host
     metadata:
       workload_label: skew_dag_zipf14
       arrival_model: dag-burst
-      background_load: low
+      background_load: light
       zipf_alpha: 1.4
-      arrival_label: deterministic
+      arrival_label: baseline
       placement: host
-  - name: dag-zipf14-prefer-nic
+  - name: dag-zipf14-prefer-nic-baseline
     workload: ../../workloads/examples/skew_dag_zipf14.yaml
     policy: prefer-nic
     metadata:
       workload_label: skew_dag_zipf14
       arrival_model: dag-burst
-      background_load: low
+      background_load: light
       zipf_alpha: 1.4
-      arrival_label: deterministic
+      arrival_label: baseline
       placement: nic
-  - name: dag-zipf18-prefer-host
+  - name: dag-zipf14-prefer-host-stress
+    workload: ../../workloads/examples/skew_dag_zipf14.yaml
+    policy: prefer-host
+    metadata:
+      workload_label: skew_dag_zipf14
+      arrival_model: dag-burst
+      background_load: heavy
+      zipf_alpha: 1.4
+      arrival_label: stress
+      placement: host
+  - name: dag-zipf14-prefer-nic-stress
+    workload: ../../workloads/examples/skew_dag_zipf14.yaml
+    policy: prefer-nic
+    metadata:
+      workload_label: skew_dag_zipf14
+      arrival_model: dag-burst
+      background_load: heavy
+      zipf_alpha: 1.4
+      arrival_label: stress
+      placement: nic
+  - name: dag-zipf18-prefer-host-baseline
     workload: ../../workloads/examples/skew_dag_zipf18.yaml
     policy: prefer-host
     metadata:
       workload_label: skew_dag_zipf18
       arrival_model: dag-burst
-      background_load: low
+      background_load: light
       zipf_alpha: 1.8
-      arrival_label: deterministic
+      arrival_label: baseline
       placement: host
-  - name: dag-zipf18-prefer-nic
+  - name: dag-zipf18-prefer-nic-baseline
     workload: ../../workloads/examples/skew_dag_zipf18.yaml
     policy: prefer-nic
     metadata:
       workload_label: skew_dag_zipf18
       arrival_model: dag-burst
-      background_load: low
+      background_load: light
       zipf_alpha: 1.8
-      arrival_label: deterministic
+      arrival_label: baseline
+      placement: nic
+  - name: dag-zipf18-prefer-host-stress
+    workload: ../../workloads/examples/skew_dag_zipf18.yaml
+    policy: prefer-host
+    metadata:
+      workload_label: skew_dag_zipf18
+      arrival_model: dag-burst
+      background_load: heavy
+      zipf_alpha: 1.8
+      arrival_label: stress
+      placement: host
+  - name: dag-zipf18-prefer-nic-stress
+    workload: ../../workloads/examples/skew_dag_zipf18.yaml
+    policy: prefer-nic
+    metadata:
+      workload_label: skew_dag_zipf18
+      arrival_model: dag-burst
+      background_load: heavy
+      zipf_alpha: 1.8
+      arrival_label: stress
       placement: nic

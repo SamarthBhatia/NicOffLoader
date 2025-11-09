@@ -8,6 +8,7 @@
   ],
   "metadata_keys": [
     "arrival_label",
+    "background_load",
     "zipf_alpha"
   ],
   "workloads": [
@@ -64,7 +65,8 @@
         "workload_label": "skew_dag",
         "arrival_model": "dag-burst",
         "zipf_alpha": "1.0",
-        "arrival_label": "baseline"
+        "arrival_label": "baseline",
+        "background_load": "light"
       }
     },
     {
@@ -85,7 +87,8 @@
         "workload_label": "skew_dag",
         "arrival_model": "dag-burst",
         "zipf_alpha": "1.0",
-        "arrival_label": "stress"
+        "arrival_label": "stress",
+        "background_load": "heavy"
       }
     },
     {
@@ -106,7 +109,8 @@
         "workload_label": "skew_dag_heavy",
         "arrival_model": "dag-burst",
         "zipf_alpha": "1.2",
-        "arrival_label": "baseline"
+        "arrival_label": "baseline",
+        "background_load": "light"
       }
     },
     {
@@ -127,7 +131,8 @@
         "workload_label": "skew_dag_heavy",
         "arrival_model": "dag-burst",
         "zipf_alpha": "1.2",
-        "arrival_label": "stress"
+        "arrival_label": "stress",
+        "background_load": "heavy"
       }
     },
     {
@@ -148,7 +153,8 @@
         "workload_label": "skew_dag_zipf14",
         "arrival_model": "dag-burst",
         "zipf_alpha": "1.4",
-        "arrival_label": "baseline"
+        "arrival_label": "baseline",
+        "background_load": "light"
       }
     },
     {
@@ -169,7 +175,8 @@
         "workload_label": "skew_dag_zipf14",
         "arrival_model": "dag-burst",
         "zipf_alpha": "1.4",
-        "arrival_label": "stress"
+        "arrival_label": "stress",
+        "background_load": "heavy"
       }
     },
     {
@@ -190,7 +197,8 @@
         "workload_label": "skew_dag_zipf18",
         "arrival_model": "dag-burst",
         "zipf_alpha": "1.8",
-        "arrival_label": "baseline"
+        "arrival_label": "baseline",
+        "background_load": "light"
       }
     },
     {
@@ -211,7 +219,8 @@
         "workload_label": "skew_dag_zipf18",
         "arrival_model": "dag-burst",
         "zipf_alpha": "1.8",
-        "arrival_label": "stress"
+        "arrival_label": "stress",
+        "background_load": "heavy"
       }
     }
   ]

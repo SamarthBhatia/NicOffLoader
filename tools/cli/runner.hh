@@ -25,6 +25,7 @@ struct CliOptions {
     bool show_help{false};
     bool batch_mode{false};
     std::filesystem::path batch_manifest_path;
+    std::map<std::string, std::string> metadata;
 };
 
 struct RunSummary {

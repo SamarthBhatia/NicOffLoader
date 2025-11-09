@@ -449,6 +449,8 @@ PolicyStateSnapshot BasicScheduler::policy_state_snapshot() const {
         snapshot.tasks.push_back(task_state);
     }
 
+    snapshot.scenario_metadata = scenario_metadata_;
+
     return snapshot;
 }
 

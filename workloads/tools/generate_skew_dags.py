@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 import pathlib
 import textwrap
 from typing import Dict, Iterable, List, Mapping, Sequence
@@ -111,6 +112,7 @@ BASE_TEMPLATE = {
 
 CONFIG_PATH = pathlib.Path(__file__).with_name("skew_dag_config.json")
 RESERVED_MANIFEST_METADATA = {"arrival_model", "workload_label"}
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 def format_scalar(value: object) -> str:
@@ -293,26 +295,53 @@ def update_policy_batch(config: Mapping[str, object], variants: Sequence[Mapping
     defaults = batch_cfg["defaults"]
     default_metadata = defaults.get("metadata", {})
     runs = list(batch_cfg.get("static_runs", []))
+    batch_path = pathlib.Path("experiments/policy_baseline/batch.yaml")
+    batch_dir = batch_path.parent
+
+    def resolve_workload_path(value: str) -> str:
+        candidate = pathlib.Path(value)
+        if not candidate.is_absolute():
+            candidate = (REPO_ROOT / candidate).resolve()
+        return os.path.relpath(candidate, batch_dir)
+
     for variant in variants:
-        for run in variant.get("batch_runs", []):
-            metadata = dict(default_metadata)
-            metadata.update(variant.get("metadata", {}))
-            metadata.update(run.get("metadata", {}))
-            run_entry = {
-                "name": run["name"],
-                "workload": run.get("workload", f"../../workloads/examples/{variant['name']}.yaml"),
-                "policy": run["policy"],
-                "metadata": metadata,
-            }
-            if "service_modes" in run:
-                run_entry["service_modes"] = run["service_modes"]
-            runs.append(run_entry)
+        variant_metadata = variant.get("metadata", {})
+        variant_default_workload = variant.get("workload", f"workloads/examples/{variant['name']}.yaml")
+        scenarios: Sequence[Mapping[str, object] | None] = variant.get("scenarios") or [None]
+        default_batch_runs = variant.get("batch_runs", [])
+        for scenario in scenarios:
+            if scenario and not scenario.get("include_in_batch", True):
+                continue
+            scenario_name = scenario.get("name") if scenario else ""
+            scenario_suffix = f"-{scenario_name}" if scenario_name else ""
+            scenario_metadata = scenario.get("metadata", {}) if scenario else {}
+            scenario_workload = scenario.get("policy_workload") or scenario.get("workload") if scenario else None
+            scenario_runs = scenario.get("batch_runs") if scenario and "batch_runs" in scenario else default_batch_runs
+            if not scenario_runs:
+                continue
+            workload_base = scenario_workload or variant_default_workload
+            for run in scenario_runs:
+                run_name = run["name"] + scenario_suffix
+                metadata = dict(default_metadata)
+                metadata.update(variant_metadata)
+                metadata.update(scenario_metadata)
+                metadata.update(run.get("metadata", {}))
+                workload_override = run.get("workload")
+                workload_path = workload_override if workload_override else resolve_workload_path(workload_base)
+                run_entry = {
+                    "name": run_name,
+                    "workload": workload_path,
+                    "policy": run["policy"],
+                    "metadata": metadata,
+                }
+                if "service_modes" in run:
+                    run_entry["service_modes"] = run["service_modes"]
+                runs.append(run_entry)
     batch = {
         "defaults": defaults,
         "csv": batch_cfg["csv"],
         "runs": runs,
     }
-    batch_path = pathlib.Path("experiments/policy_baseline/batch.yaml")
     batch_path.write_text(dump_yaml_text(batch))
     print(f"[skew-generator] updated {batch_path}")
 

@@ -32,6 +32,7 @@ NUMERIC_METRICS = [
     ("p99_latency", "p99_latency_us"),
 ]
 PEAK_FIELD = ("peak_q", "peak_waiting_queue_depth")
+DEFAULT_METADATA_COLUMNS = ["arrival_label", "background_load", "zipf_alpha"]
 
 def load_rows(csv_path: pathlib.Path) -> List[Dict[str, str]]:
     if not csv_path.exists():
@@ -145,7 +146,7 @@ def main() -> int:
         "--columns",
         nargs="*",
         default=[],
-        help="Additional columns to show (or propagate when grouping), such as workload_label",
+        help="Additional columns to show (arrival_label/zipf_alpha are included automatically when present)",
     )
     args = parser.parse_args()
 
@@ -155,9 +156,16 @@ def main() -> int:
         return 0
 
     available_columns = set(rows[0].keys())
+    available_columns = set(rows[0].keys())
     for column in args.columns:
         if column not in available_columns:
             raise SystemExit(f"Unknown column requested via --columns: {column}")
+    extra_columns = list(args.columns)
+    seen_columns = set(extra_columns)
+    for column in DEFAULT_METADATA_COLUMNS:
+        if column in available_columns and column not in seen_columns:
+            extra_columns.append(column)
+            seen_columns.add(column)
     filters: List[Tuple[str, str]] = []
     for raw in args.filter:
         if "=" not in raw:
@@ -175,8 +183,8 @@ def main() -> int:
     if args.group_by:
         if args.group_by not in available_columns:
             raise SystemExit(f"group-by column '{args.group_by}' not found in CSV.")
-        aggregated = aggregate_rows(rows, args.group_by, args.columns)
-        print(format_grouped_table(aggregated, args.group_by, args.columns))
+        aggregated = aggregate_rows(rows, args.group_by, extra_columns)
+        print(format_grouped_table(aggregated, args.group_by, extra_columns))
         return 0
 
     if args.sort == "throughput":
@@ -184,7 +192,7 @@ def main() -> int:
     else:
         rows.sort(key=lambda r: float(r["mean_latency_us"]))
 
-    print(format_table(rows, args.columns))
+    print(format_table(rows, extra_columns))
     return 0
 
 
