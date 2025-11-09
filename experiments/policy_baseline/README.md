@@ -32,6 +32,9 @@ additional columns via `--columns`. `export_normalized.py`
 groups repeated runs, emits both a normalized CSV and (optionally) Parquet table (requires `pyarrow`),
 and can join the static placement summary (`--static-summary`, defaults to `results/dag_static_summary.csv`)
 to annotate each DAG workload with host/NIC baseline throughput and latency deltas.
+Variant metadata such as `zipf_alpha` and scenario annotations like `arrival_label` are captured in the
+batch CSV (and therefore in the normalized export) so downstream tooling can pivot on light/stress tiers
+without guessing from the workload name.
 `plots/policy_baseline.py` consumes the normalized CSV to render throughput/latency comparison charts
 and stores them under `plots/generated/`. `import_static_traces.py` ingests the static placement sweep
 CSV and emits `dag_static_summary.csv`, capturing host- vs. NIC-pinned baselines for the skewed DAG

@@ -26,7 +26,8 @@ scripts consume when generating throughput/latency figures and comparing static 
    ```
 
 `run.py` will create `experiments/placement_baseline/results/placement_sweep.csv` (columns now include
-mean/p50/p95/p99 latency, peak waiting-queue depth, and the placement mode) and stash the JSON
+mean/p50/p95/p99 latency, peak waiting-queue depth, the placement mode, plus any metadata keys declared
+in `manifest.yaml` such as `arrival_label` and `zipf_alpha`) and stash the JSON
 summaries produced by `placement_benchmark` alongside it. The manifest can enumerate multiple
 `placement_modes` per workload entry so the sweep emits HostPinned vs. NICPinned comparisons in a
 single pass (the skewed DAG scenario demonstrates this). The plotting step reads the CSV and writes

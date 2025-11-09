@@ -6,6 +6,10 @@
   "placement_modes": [
     "hint_respect"
   ],
+  "metadata_keys": [
+    "arrival_label",
+    "zipf_alpha"
+  ],
   "workloads": [
     {
       "name": "kv_read_periodic",
@@ -20,9 +24,10 @@
       "seeds": [
         1
       ],
-      "placement_modes": [
-        "hint_respect"
-      ]
+      "metadata": {
+        "arrival_label": "deterministic",
+        "zipf_alpha": "na"
+      }
     },
     {
       "name": "tcp_split_poisson",
@@ -36,12 +41,14 @@
       "seeds": [
         1
       ],
-      "placement_modes": [
-        "hint_respect"
-      ]
+      "metadata": {
+        "arrival_label": "poisson",
+        "zipf_alpha": "na"
+      }
     },
     {
-      "name": "skew_dag_arrival",
+      "name": "skew_dag_baseline",
+      "workload": "workloads/examples/skew_dag.yaml",
       "arrival": "workloads/arrivals/poisson_bursty.yaml",
       "arrival_scales": [
         1.0
@@ -53,10 +60,37 @@
         "host_pinned",
         "nic_pinned"
       ],
-      "workload": "workloads/examples/skew_dag.yaml"
+      "metadata": {
+        "workload_label": "skew_dag",
+        "arrival_model": "dag-burst",
+        "zipf_alpha": "1.0",
+        "arrival_label": "baseline"
+      }
     },
     {
-      "name": "skew_dag_heavy_arrival",
+      "name": "skew_dag_stress",
+      "workload": "workloads/examples/skew_dag.yaml",
+      "arrival": "workloads/arrivals/poisson_bursty.yaml",
+      "arrival_scales": [
+        1.3
+      ],
+      "seeds": [
+        1
+      ],
+      "placement_modes": [
+        "host_pinned",
+        "nic_pinned"
+      ],
+      "metadata": {
+        "workload_label": "skew_dag",
+        "arrival_model": "dag-burst",
+        "zipf_alpha": "1.0",
+        "arrival_label": "stress"
+      }
+    },
+    {
+      "name": "skew_dag_heavy_baseline",
+      "workload": "workloads/examples/skew_dag_heavy.yaml",
       "arrival": "workloads/arrivals/poisson_bursty.yaml",
       "arrival_scales": [
         1.0
@@ -68,10 +102,37 @@
         "host_pinned",
         "nic_pinned"
       ],
-      "workload": "workloads/examples/skew_dag_heavy.yaml"
+      "metadata": {
+        "workload_label": "skew_dag_heavy",
+        "arrival_model": "dag-burst",
+        "zipf_alpha": "1.2",
+        "arrival_label": "baseline"
+      }
     },
     {
-      "name": "skew_dag_zipf14_arrival",
+      "name": "skew_dag_heavy_stress",
+      "workload": "workloads/examples/skew_dag_heavy.yaml",
+      "arrival": "workloads/arrivals/poisson_bursty.yaml",
+      "arrival_scales": [
+        1.4
+      ],
+      "seeds": [
+        1
+      ],
+      "placement_modes": [
+        "host_pinned",
+        "nic_pinned"
+      ],
+      "metadata": {
+        "workload_label": "skew_dag_heavy",
+        "arrival_model": "dag-burst",
+        "zipf_alpha": "1.2",
+        "arrival_label": "stress"
+      }
+    },
+    {
+      "name": "skew_dag_zipf14_baseline",
+      "workload": "workloads/examples/skew_dag_zipf14.yaml",
       "arrival": "workloads/arrivals/poisson_bursty.yaml",
       "arrival_scales": [
         1.0
@@ -83,10 +144,37 @@
         "host_pinned",
         "nic_pinned"
       ],
-      "workload": "workloads/examples/skew_dag_zipf14.yaml"
+      "metadata": {
+        "workload_label": "skew_dag_zipf14",
+        "arrival_model": "dag-burst",
+        "zipf_alpha": "1.4",
+        "arrival_label": "baseline"
+      }
     },
     {
-      "name": "skew_dag_zipf18_arrival",
+      "name": "skew_dag_zipf14_stress",
+      "workload": "workloads/examples/skew_dag_zipf14.yaml",
+      "arrival": "workloads/arrivals/poisson_bursty.yaml",
+      "arrival_scales": [
+        1.4
+      ],
+      "seeds": [
+        1
+      ],
+      "placement_modes": [
+        "host_pinned",
+        "nic_pinned"
+      ],
+      "metadata": {
+        "workload_label": "skew_dag_zipf14",
+        "arrival_model": "dag-burst",
+        "zipf_alpha": "1.4",
+        "arrival_label": "stress"
+      }
+    },
+    {
+      "name": "skew_dag_zipf18_baseline",
+      "workload": "workloads/examples/skew_dag_zipf18.yaml",
       "arrival": "workloads/arrivals/poisson_bursty.yaml",
       "arrival_scales": [
         1.0
@@ -98,7 +186,33 @@
         "host_pinned",
         "nic_pinned"
       ],
-      "workload": "workloads/examples/skew_dag_zipf18.yaml"
+      "metadata": {
+        "workload_label": "skew_dag_zipf18",
+        "arrival_model": "dag-burst",
+        "zipf_alpha": "1.8",
+        "arrival_label": "baseline"
+      }
+    },
+    {
+      "name": "skew_dag_zipf18_stress",
+      "workload": "workloads/examples/skew_dag_zipf18.yaml",
+      "arrival": "workloads/arrivals/poisson_bursty.yaml",
+      "arrival_scales": [
+        1.5
+      ],
+      "seeds": [
+        1
+      ],
+      "placement_modes": [
+        "host_pinned",
+        "nic_pinned"
+      ],
+      "metadata": {
+        "workload_label": "skew_dag_zipf18",
+        "arrival_model": "dag-burst",
+        "zipf_alpha": "1.8",
+        "arrival_label": "stress"
+      }
     }
   ]
 }

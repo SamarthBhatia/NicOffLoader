@@ -110,6 +110,7 @@ BASE_TEMPLATE = {
 }
 
 CONFIG_PATH = pathlib.Path(__file__).with_name("skew_dag_config.json")
+RESERVED_MANIFEST_METADATA = {"arrival_model", "workload_label"}
 
 
 def format_scalar(value: object) -> str:
@@ -232,20 +233,54 @@ def load_config(path: pathlib.Path) -> Dict[str, object]:
 
 def update_manifest(config: Mapping[str, object], variants: Sequence[Mapping[str, object]]) -> None:
     manifest_cfg = config["placement_manifest"]
-    workloads = list(manifest_cfg.get("static_workloads", []))
-    for variant in variants:
-        entry_cfg = variant.get("manifest_entry")
-        if not entry_cfg:
-            continue
-        entry = dict(entry_cfg)
-        entry.setdefault("workload", f"workloads/examples/{variant['name']}.yaml")
+    workloads: List[Dict[str, object]] = []
+    metadata_keys = set()
+
+    def normalize_metadata(metadata: Mapping[str, object] | None) -> Dict[str, str]:
+        result: Dict[str, str] = {}
+        if metadata:
+            for key, value in metadata.items():
+                result[key] = str(value)
+                if key not in RESERVED_MANIFEST_METADATA:
+                    metadata_keys.add(key)
+        return result
+
+    for static_entry in manifest_cfg.get("static_workloads", []):
+        entry = dict(static_entry)
+        entry["metadata"] = normalize_metadata(static_entry.get("metadata"))
         workloads.append(entry)
+
+    default_seeds = manifest_cfg.get("seeds", [manifest_cfg.get("seed", 1)])
+    default_modes = manifest_cfg.get("placement_modes", ["hint_respect"])
+
+    for variant in variants:
+        variant_metadata = normalize_metadata(variant.get("metadata"))
+        scenarios = variant.get("scenarios") or []
+        if not scenarios:
+            entry_cfg = variant.get("manifest_entry")
+            if entry_cfg:
+                scenarios = [entry_cfg]
+        for scenario in scenarios:
+            scenario_meta = dict(variant_metadata)
+            scenario_meta.update(normalize_metadata(scenario.get("metadata")))
+            entry = {
+                "name": f"{variant['name']}_{scenario.get('name', 'default')}",
+                "workload": scenario.get("workload", f"workloads/examples/{variant['name']}.yaml"),
+                "arrival": scenario.get("arrival", manifest_cfg.get("arrival")),
+                "arrival_scales": scenario.get("arrival_scales", [1.0]),
+                "seeds": scenario.get("seeds", default_seeds),
+                "placement_modes": scenario.get("placement_modes", default_modes),
+                "metadata": scenario_meta,
+            }
+            workloads.append(entry)
+
     manifest = {
         "profile": manifest_cfg["profile"],
         "binary": manifest_cfg["binary"],
         "csv_path": manifest_cfg["csv_path"],
         "results_dir": manifest_cfg["results_dir"],
         "placement_modes": manifest_cfg.get("placement_modes", []),
+        "metadata_keys": sorted(metadata_keys),
         "workloads": workloads,
     }
     manifest_path = pathlib.Path("experiments/placement_baseline/manifest.yaml")

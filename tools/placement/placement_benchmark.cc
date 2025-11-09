@@ -65,6 +65,7 @@ struct Options {
     std::string policy_id{"none"};
     double arrival_scale{1.0};
     PlacementMode placement_mode{PlacementMode::kHintRespect};
+    std::vector<std::pair<std::string, std::string>> metadata;
 };
 
 struct ArrivalFixture {
@@ -75,7 +76,8 @@ struct ArrivalFixture {
 void print_usage(const char* argv0) {
     std::cerr << "Usage: " << argv0
               << " --profile PROFILE.yaml --workload WORKLOAD.yaml --arrival ARRIVAL.yaml [--output results.json] "
-                 "[--csv results.csv] [--seed N] [--arrival-scale SCALE] [--placement-mode MODE]\n";
+                 "[--csv results.csv] [--seed N] [--arrival-scale SCALE] [--placement-mode MODE] "
+                 "[--metadata key=value ...]\n";
 }
 
 bool parse_args(int argc, char** argv, Options& options) {
@@ -109,6 +111,15 @@ bool parse_args(int argc, char** argv, Options& options) {
             options.arrival_scale = std::stod(require_value("--arrival-scale"));
         } else if (arg == "--placement-mode") {
             options.placement_mode = placement_mode_from_string(require_value("--placement-mode"));
+        } else if (arg == "--metadata") {
+            std::string kv = require_value("--metadata");
+            const auto pos = kv.find('=');
+            if (pos == std::string::npos) {
+                throw std::runtime_error("metadata flag expects key=value");
+            }
+            std::string key = kv.substr(0, pos);
+            std::string value = kv.substr(pos + 1);
+            options.metadata.emplace_back(std::move(key), std::move(value));
         } else {
             print_usage(argv[0]);
             return false;
@@ -352,7 +363,14 @@ void write_summary(const std::filesystem::path& output_path,
     out << "  \"latency_p50_us\": " << latency_stats.p50 << ",\n";
     out << "  \"latency_p95_us\": " << latency_stats.p95 << ",\n";
     out << "  \"latency_p99_us\": " << latency_stats.p99 << ",\n";
-    out << "  \"peak_waiting_queue_depth\": " << metrics.aggregate.peak_waiting_queue_depth << "\n";
+    out << "  \"peak_waiting_queue_depth\": " << metrics.aggregate.peak_waiting_queue_depth << ",\n";
+    out << "  \"metadata\": {\n";
+    for (std::size_t idx = 0; idx < options.metadata.size(); ++idx) {
+        const auto& [key, value] = options.metadata[idx];
+        out << "    \"" << key << "\": \"" << value << "\"";
+        out << (idx + 1 < options.metadata.size() ? ",\n" : "\n");
+    }
+    out << "  }\n";
     out << "}\n";
 }
 
@@ -371,7 +389,11 @@ void append_csv(const std::filesystem::path& csv_path,
     if (!exists) {
         out << "profile,workload_label,workload_path,arrival_model,arrival_scale,placement_mode,arrival_count,completed_tasks,"
                "makespan_us,throughput_per_sec,mean_latency_us,latency_p50_us,latency_p95_us,latency_p99_us,"
-               "total_latency_us,peak_waiting_queue_depth,seed\n";
+               "total_latency_us,peak_waiting_queue_depth,seed";
+        for (const auto& [key, _] : options.metadata) {
+            out << "," << key;
+        }
+        out << "\n";
     }
     const std::size_t task_count = metrics.tasks.size();
     const double throughput = compute_throughput(task_count, makespan_us);
@@ -393,7 +415,11 @@ void append_csv(const std::filesystem::path& csv_path,
         << latency_stats.p99 << ","
         << metrics.aggregate.total_latency << ","
         << metrics.aggregate.peak_waiting_queue_depth << ","
-        << options.seed << "\n";
+        << options.seed;
+    for (const auto& [_, value] : options.metadata) {
+        out << "," << value;
+    }
+    out << "\n";
 }
 
 } // namespace

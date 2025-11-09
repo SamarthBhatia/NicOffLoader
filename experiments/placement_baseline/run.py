@@ -45,6 +45,20 @@ def load_manifest(path: pathlib.Path) -> Dict[str, Any]:
     return data
 
 
+RESERVED_KEYS = {"arrival_model", "workload_label"}
+
+
+def collect_metadata_keys(workloads: List[Dict[str, Any]], manifest: Dict[str, Any]) -> List[str]:
+    if "metadata_keys" in manifest and manifest["metadata_keys"]:
+        return [key for key in manifest["metadata_keys"] if key not in RESERVED_KEYS]
+    keys = set()
+    for scenario in workloads:
+        for key in scenario.get("metadata", {}):
+            if key not in RESERVED_KEYS:
+                keys.add(key)
+    return sorted(keys)
+
+
 def run_sweep(manifest: Dict[str, Any], binary: pathlib.Path, append: bool) -> None:
     csv_path = pathlib.Path(manifest.get("csv_path", "experiments/placement_baseline/results/placement_sweep.csv"))
     results_dir = pathlib.Path(manifest.get("results_dir", csv_path.parent))
@@ -55,6 +69,7 @@ def run_sweep(manifest: Dict[str, Any], binary: pathlib.Path, append: bool) -> N
     results_dir.mkdir(parents=True, exist_ok=True)
 
     workloads = manifest["workloads"]
+    metadata_keys = collect_metadata_keys(workloads, manifest)
     default_seeds = _as_list(manifest.get("seeds"), [manifest.get("seed", 1)])
     default_placements = _as_list(manifest.get("placement_modes"), ["hint_respect"])
 
@@ -68,6 +83,10 @@ def run_sweep(manifest: Dict[str, Any], binary: pathlib.Path, append: bool) -> N
                 for seed in seeds:
                     safe_mode = placement_mode.replace("/", "-")
                     output_path = results_dir / f"{scenario_name}_mode-{safe_mode}_scale-{scale}_seed-{seed}.json"
+                    metadata_map = {key: "" for key in metadata_keys}
+                    scenario_metadata = scenario.get("metadata", {})
+                    for key, value in scenario_metadata.items():
+                        metadata_map[key] = str(value)
                     cmd = [
                         str(binary),
                         "--profile",
@@ -83,11 +102,15 @@ def run_sweep(manifest: Dict[str, Any], binary: pathlib.Path, append: bool) -> N
                         "--seed",
                         str(seed),
                         "--output",
-                    str(output_path),
-                    "--csv",
-                    str(csv_path),
-                ]
+                        str(output_path),
+                        "--csv",
+                        str(csv_path),
+                    ]
+                    for key in metadata_keys:
+                        cmd.extend(["--metadata", f"{key}={metadata_map.get(key, '')}"])
                     print(f"[sweep] {scenario_name} mode={placement_mode} scale={scale} seed={seed}")
+                    if metadata_keys:
+                        print("        metadata:", ", ".join(f"{k}={metadata_map.get(k, '')}" for k in metadata_keys))
                     print("        ", " ".join(shlex.quote(part) for part in cmd))
                     subprocess.run(cmd, check=True)
 

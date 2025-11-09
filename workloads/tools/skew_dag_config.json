@@ -12,7 +12,10 @@
         "arrival": "workloads/arrivals/periodic_sweep.yaml",
         "arrival_scales": [0.5, 1.0, 1.5, 2.0],
         "seeds": [1],
-        "placement_modes": ["hint_respect"]
+        "metadata": {
+          "arrival_label": "deterministic",
+          "zipf_alpha": "na"
+        }
       },
       {
         "name": "tcp_split_poisson",
@@ -20,7 +23,10 @@
         "arrival": "workloads/arrivals/poisson_bursty.yaml",
         "arrival_scales": [0.5, 1.0, 1.5],
         "seeds": [1],
-        "placement_modes": ["hint_respect"]
+        "metadata": {
+          "arrival_label": "poisson",
+          "zipf_alpha": "na"
+        }
       }
     ]
   },
@@ -32,7 +38,9 @@
       "metadata": {
         "workload_label": "kv_read",
         "arrival_model": "periodic",
-        "background_load": "low"
+        "background_load": "low",
+        "zipf_alpha": "na",
+        "arrival_label": "deterministic"
       },
       "service_modes": {
         "host": "deterministic",
@@ -73,14 +81,8 @@
       "description": "Skinny–wide–skinny DAG modeling a KV read path with a skewed lookup stage.\nparse_req and hash_key fan into a dominant db_lookup node (skewable via\nservice_profile), while auth_check joins before serialize_resp to stress\ndependency pressure.",
       "metadata": {
         "workload_label": "skew_dag",
-        "arrival_model": "dag-burst"
-      },
-      "manifest_entry": {
-        "name": "skew_dag_arrival",
-        "arrival": "workloads/arrivals/poisson_bursty.yaml",
-        "arrival_scales": [1.0],
-        "seeds": [1],
-        "placement_modes": ["host_pinned", "nic_pinned"]
+        "arrival_model": "dag-burst",
+        "zipf_alpha": "1.0"
       },
       "batch_runs": [
         {
@@ -97,6 +99,28 @@
             "placement": "nic"
           }
         }
+      ],
+      "scenarios": [
+        {
+          "name": "baseline",
+          "arrival": "workloads/arrivals/poisson_bursty.yaml",
+          "arrival_scales": [1.0],
+          "seeds": [1],
+          "placement_modes": ["host_pinned", "nic_pinned"],
+          "metadata": {
+            "arrival_label": "baseline"
+          }
+        },
+        {
+          "name": "stress",
+          "arrival": "workloads/arrivals/poisson_bursty.yaml",
+          "arrival_scales": [1.3],
+          "seeds": [1],
+          "placement_modes": ["host_pinned", "nic_pinned"],
+          "metadata": {
+            "arrival_label": "stress"
+          }
+        }
       ]
     },
     {
@@ -106,14 +130,8 @@
       "description": "Heavier skew variant of the KV DAG workload where the db_lookup stage carries\n80/20-style heavy-tail instructions/bytes to stress host↔NIC transfers.",
       "metadata": {
         "workload_label": "skew_dag_heavy",
-        "arrival_model": "dag-burst"
-      },
-      "manifest_entry": {
-        "name": "skew_dag_heavy_arrival",
-        "arrival": "workloads/arrivals/poisson_bursty.yaml",
-        "arrival_scales": [1.0],
-        "seeds": [1],
-        "placement_modes": ["host_pinned", "nic_pinned"]
+        "arrival_model": "dag-burst",
+        "zipf_alpha": "1.2"
       },
       "batch_runs": [
         {
@@ -128,6 +146,28 @@
           "policy": "prefer-nic",
           "metadata": {
             "placement": "nic"
+          }
+        }
+      ],
+      "scenarios": [
+        {
+          "name": "baseline",
+          "arrival": "workloads/arrivals/poisson_bursty.yaml",
+          "arrival_scales": [1.0],
+          "seeds": [1],
+          "placement_modes": ["host_pinned", "nic_pinned"],
+          "metadata": {
+            "arrival_label": "baseline"
+          }
+        },
+        {
+          "name": "stress",
+          "arrival": "workloads/arrivals/poisson_bursty.yaml",
+          "arrival_scales": [1.4],
+          "seeds": [1],
+          "placement_modes": ["host_pinned", "nic_pinned"],
+          "metadata": {
+            "arrival_label": "stress"
           }
         }
       ],
@@ -191,14 +231,8 @@
       "description": "Zipf-heavy (alpha≈1.4) variant of the KV DAG workload. The db_lookup node\ninherits a long-tail key distribution so host-pinned placement keeps\nre-touching the same hot rows (high host_link + DRAM pressure) while NIC\nplacement pushes lookups across the DPA fabric.",
       "metadata": {
         "workload_label": "skew_dag_zipf14",
-        "arrival_model": "dag-burst"
-      },
-      "manifest_entry": {
-        "name": "skew_dag_zipf14_arrival",
-        "arrival": "workloads/arrivals/poisson_bursty.yaml",
-        "arrival_scales": [1.0],
-        "seeds": [1],
-        "placement_modes": ["host_pinned", "nic_pinned"]
+        "arrival_model": "dag-burst",
+        "zipf_alpha": "1.4"
       },
       "batch_runs": [
         {
@@ -213,6 +247,28 @@
           "policy": "prefer-nic",
           "metadata": {
             "placement": "nic"
+          }
+        }
+      ],
+      "scenarios": [
+        {
+          "name": "baseline",
+          "arrival": "workloads/arrivals/poisson_bursty.yaml",
+          "arrival_scales": [1.0],
+          "seeds": [1],
+          "placement_modes": ["host_pinned", "nic_pinned"],
+          "metadata": {
+            "arrival_label": "baseline"
+          }
+        },
+        {
+          "name": "stress",
+          "arrival": "workloads/arrivals/poisson_bursty.yaml",
+          "arrival_scales": [1.4],
+          "seeds": [1],
+          "placement_modes": ["host_pinned", "nic_pinned"],
+          "metadata": {
+            "arrival_label": "stress"
           }
         }
       ],
@@ -281,14 +337,8 @@
       "description": "More extreme Zipf-heavy (alpha≈1.8) variant that further amplifies db_lookup\nCPU/link pressure so host-pinned runs thrash whereas NIC placement keeps\nlatency flat.",
       "metadata": {
         "workload_label": "skew_dag_zipf18",
-        "arrival_model": "dag-burst"
-      },
-      "manifest_entry": {
-        "name": "skew_dag_zipf18_arrival",
-        "arrival": "workloads/arrivals/poisson_bursty.yaml",
-        "arrival_scales": [1.0],
-        "seeds": [1],
-        "placement_modes": ["host_pinned", "nic_pinned"]
+        "arrival_model": "dag-burst",
+        "zipf_alpha": "1.8"
       },
       "batch_runs": [
         {
@@ -303,6 +353,28 @@
           "policy": "prefer-nic",
           "metadata": {
             "placement": "nic"
+          }
+        }
+      ],
+      "scenarios": [
+        {
+          "name": "baseline",
+          "arrival": "workloads/arrivals/poisson_bursty.yaml",
+          "arrival_scales": [1.0],
+          "seeds": [1],
+          "placement_modes": ["host_pinned", "nic_pinned"],
+          "metadata": {
+            "arrival_label": "baseline"
+          }
+        },
+        {
+          "name": "stress",
+          "arrival": "workloads/arrivals/poisson_bursty.yaml",
+          "arrival_scales": [1.5],
+          "seeds": [1],
+          "placement_modes": ["host_pinned", "nic_pinned"],
+          "metadata": {
+            "arrival_label": "stress"
           }
         }
       ],

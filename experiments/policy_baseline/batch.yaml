@@ -6,6 +6,8 @@ defaults:
     workload_label: kv_read
     arrival_model: periodic
     background_load: low
+    zipf_alpha: na
+    arrival_label: deterministic
   service_modes:
     host: deterministic
     nic: deterministic
@@ -31,6 +33,8 @@ runs:
       workload_label: skew_dag
       arrival_model: dag-burst
       background_load: low
+      zipf_alpha: 1.0
+      arrival_label: deterministic
       placement: host
   - name: dag-prefer-nic
     workload: ../../workloads/examples/skew_dag.yaml
@@ -39,6 +43,8 @@ runs:
       workload_label: skew_dag
       arrival_model: dag-burst
       background_load: low
+      zipf_alpha: 1.0
+      arrival_label: deterministic
       placement: nic
   - name: dag-heavy-prefer-host
     workload: ../../workloads/examples/skew_dag_heavy.yaml
@@ -47,6 +53,8 @@ runs:
       workload_label: skew_dag_heavy
       arrival_model: dag-burst
       background_load: low
+      zipf_alpha: 1.2
+      arrival_label: deterministic
       placement: host
   - name: dag-heavy-prefer-nic
     workload: ../../workloads/examples/skew_dag_heavy.yaml
@@ -55,6 +63,8 @@ runs:
       workload_label: skew_dag_heavy
       arrival_model: dag-burst
       background_load: low
+      zipf_alpha: 1.2
+      arrival_label: deterministic
       placement: nic
   - name: dag-zipf14-prefer-host
     workload: ../../workloads/examples/skew_dag_zipf14.yaml
@@ -63,6 +73,8 @@ runs:
       workload_label: skew_dag_zipf14
       arrival_model: dag-burst
       background_load: low
+      zipf_alpha: 1.4
+      arrival_label: deterministic
       placement: host
   - name: dag-zipf14-prefer-nic
     workload: ../../workloads/examples/skew_dag_zipf14.yaml
@@ -71,6 +83,8 @@ runs:
       workload_label: skew_dag_zipf14
       arrival_model: dag-burst
       background_load: low
+      zipf_alpha: 1.4
+      arrival_label: deterministic
       placement: nic
   - name: dag-zipf18-prefer-host
     workload: ../../workloads/examples/skew_dag_zipf18.yaml
@@ -79,6 +93,8 @@ runs:
       workload_label: skew_dag_zipf18
       arrival_model: dag-burst
       background_load: low
+      zipf_alpha: 1.8
+      arrival_label: deterministic
       placement: host
   - name: dag-zipf18-prefer-nic
     workload: ../../workloads/examples/skew_dag_zipf18.yaml
@@ -87,4 +103,6 @@ runs:
       workload_label: skew_dag_zipf18
       arrival_model: dag-burst
       background_load: low
+      zipf_alpha: 1.8
+      arrival_label: deterministic
       placement: nic
