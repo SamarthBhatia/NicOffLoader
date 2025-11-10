@@ -7,3 +7,7 @@ The simulator now loads YAML specs from `workloads/examples/` (see `sequential_h
 Need to tweak the skewed DAG variants? Update `workloads/tools/skew_dag_config.json` (stage scalers, metadata, manifest/batch wiring) and run `python3 workloads/tools/generate_skew_dags.py`. The helper regenerates the `skew_dag*.yaml` fixtures plus refreshes the placement manifest and policy batch so new tiers feed experiments automatically; pass `--variant` to limit regeneration to a subset or `--skip-manifests` if you only want the YAML.
 
 Arrival-model fixtures live under `workloads/arrivals/`. Use `poisson_bursty.yaml` for alternating low/high-rate windows or `periodic_sweep.yaml` when you need deterministic inter-arrival scans (e.g., the static placement benchmark in Phase 3).
+
+Test fixtures that exercise specific scheduler/DSL behavior live under `workloads/tests/`. For example,
+`policy_queue_flip.yaml` launches two host-heavy tasks plus a NIC-heavy task simultaneously so the
+policy acceptance test can prove queue reordering still occurs under heavy load.

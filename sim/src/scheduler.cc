@@ -366,7 +366,21 @@ void BasicScheduler::apply_waiting_reorder(const std::vector<TaskId>& preferred_
             reordered.push_back(existing);
         }
     }
+    bool changed = waiting_queue_.size() != reordered.size();
+    if (!changed) {
+        auto current = waiting_queue_.begin();
+        for (TaskId id : reordered) {
+            if (*current != id) {
+                changed = true;
+                break;
+            }
+            ++current;
+        }
+    }
     waiting_queue_ = std::move(reordered);
+    if (changed && waiting_queue_.size() > 1) {
+        ++policy_waiting_reorders_;
+    }
 }
 
 void BasicScheduler::apply_admission_control(const policy::AdmissionControlDirective& directive) {

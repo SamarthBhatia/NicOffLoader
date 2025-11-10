@@ -36,16 +36,25 @@ def load_metrics(csv_path: pathlib.Path) -> List[Tuple[str, Metrics]]:
                     "p95_latency": float(row["p95_latency_us"]),
                     "p99_latency": float(row["p99_latency_us"]),
                     "peak_queue": float(row["peak_waiting_queue_depth"]),
+                    "waiting_reorders": float(row.get("waiting_reorders", 0.0) or 0.0),
+                    "waiting_ratio": float(row.get("waiting_reorders_per_task", 0.0) or 0.0),
                 }
             )
 
     summaries: List[Tuple[str, Metrics]] = []
     for name, entries in grouped.items():
         count = float(len(entries))
-        summary = {
-            metric: sum(entry[metric] for entry in entries) / count
-            for metric in ["throughput", "mean_latency", "p95_latency", "p99_latency", "peak_queue"]
-        }
+        summary = {}
+        for metric in [
+            "throughput",
+            "mean_latency",
+            "p95_latency",
+            "p99_latency",
+            "peak_queue",
+            "waiting_reorders",
+            "waiting_ratio",
+        ]:
+            summary[metric] = sum(entry[metric] for entry in entries) / count
         summaries.append((name, summary))
     summaries.sort(key=lambda item: item[0])
     return summaries
@@ -71,12 +80,14 @@ def plot(results: List[Tuple[str, Metrics]], output_path: pathlib.Path) -> None:
     mean_latency = [metrics["mean_latency"] for _, metrics in results]
     p95_latency = [metrics["p95_latency"] for _, metrics in results]
     peak_queue = [metrics["peak_queue"] for _, metrics in results]
+    waiting_reorders = [metrics["waiting_reorders"] for _, metrics in results]
+    waiting_ratio = [metrics["waiting_ratio"] for _, metrics in results]
 
     x = range(len(names))
     width = 0.35
 
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4))
-    throughput_axis, latency_axis = axes
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+    throughput_axis, latency_axis, reorder_axis = axes
 
     throughput_bars = throughput_axis.bar(x, throughput, color="#4c72b0")
     throughput_axis.set_xticks(x)
@@ -108,6 +119,23 @@ def plot(results: List[Tuple[str, Metrics]], output_path: pathlib.Path) -> None:
     latency_axis.set_title("Latency comparison")
     latency_axis.grid(axis="y", linestyle="--", alpha=0.4)
     latency_axis.legend()
+
+    reorder_bars = reorder_axis.bar(x, waiting_ratio, color="#c44e52")
+    reorder_axis.set_xticks(x)
+    reorder_axis.set_xticklabels(names, rotation=20, ha="right")
+    reorder_axis.set_ylabel("waiting reorders per task")
+    reorder_axis.set_title("Policy reorder rate")
+    reorder_axis.grid(axis="y", linestyle="--", alpha=0.4)
+    for bar, count in zip(reorder_bars, waiting_reorders):
+        height = bar.get_height()
+        reorder_axis.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            height,
+            f"{height:.4f}\n({count:.0f} total)",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
 
     fig.suptitle("Policy baseline comparison")
     fig.tight_layout()

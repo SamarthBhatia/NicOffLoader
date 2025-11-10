@@ -39,9 +39,14 @@ struct RunAggregateMetrics {
     std::size_t peak_waiting_queue_depth{0};
 };
 
+struct PolicyRunMetrics {
+    std::size_t waiting_reorders{0};
+};
+
 struct RunMetrics {
     std::vector<TaskTiming> tasks;
     RunAggregateMetrics aggregate{};
+    PolicyRunMetrics policy{};
 };
 
 } // namespace nicloadoff

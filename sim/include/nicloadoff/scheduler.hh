@@ -68,6 +68,7 @@ class BasicScheduler {
     [[nodiscard]] const std::vector<TaskMetrics>& completed_metrics() const noexcept { return completed_metrics_; }
     [[nodiscard]] RunMetrics aggregated_metrics() const;
     [[nodiscard]] PolicyStateSnapshot policy_state_snapshot() const;
+    [[nodiscard]] std::size_t policy_waiting_reorders() const noexcept { return policy_waiting_reorders_; }
 
   private:
     struct StageRuntime {
@@ -104,6 +105,7 @@ class BasicScheduler {
     std::optional<ScheduledEvent> last_event_;
     std::size_t events_processed_{0};
     std::vector<TaskMetrics> completed_metrics_;
+    std::size_t policy_waiting_reorders_{0};
     std::map<std::string, std::string> scenario_metadata_;
 
     void handle_event(const ScheduledEvent& event);

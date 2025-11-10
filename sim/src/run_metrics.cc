@@ -86,6 +86,7 @@ RunMetrics compute_run_metrics(const std::vector<BasicScheduler::TaskMetrics>& t
 RunMetrics compute_run_metrics(const BasicScheduler& scheduler) {
     RunMetrics metrics = compute_run_metrics(scheduler.completed_metrics());
     metrics.aggregate.peak_waiting_queue_depth = scheduler.peak_waiting_queue_depth();
+    metrics.policy.waiting_reorders = scheduler.policy_waiting_reorders();
     return metrics;
 }
 

@@ -186,3 +186,23 @@ runs:
       zipf_alpha: 1.8
       arrival_label: stress
       placement: nic
+  - name: queue-flip-prefer-host
+    workload: ../../workloads/tests/policy_queue_flip.yaml
+    policy: prefer-host
+    metadata:
+      workload_label: policy_queue_flip
+      arrival_model: synthetic
+      background_load: heavy
+      zipf_alpha: na
+      arrival_label: burst
+      placement: policy
+  - name: queue-flip-prefer-nic
+    workload: ../../workloads/tests/policy_queue_flip.yaml
+    policy: prefer-nic
+    metadata:
+      workload_label: policy_queue_flip
+      arrival_model: synthetic
+      background_load: heavy
+      zipf_alpha: na
+      arrival_label: burst
+      placement: policy

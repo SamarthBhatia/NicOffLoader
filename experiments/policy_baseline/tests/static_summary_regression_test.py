@@ -6,12 +6,16 @@ from __future__ import annotations
 import argparse
 import csv
 import pathlib
+import subprocess
 import sys
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
-SCRIPT_DIR = pathlib.Path(__file__).resolve().parents[1]
-sys.path.append(str(SCRIPT_DIR))
+POLICY_BASELINE_DIR = pathlib.Path(__file__).resolve().parents[1]
+REPO_ROOT = POLICY_BASELINE_DIR.parents[1]
+PLACEMENT_CSV = REPO_ROOT / "experiments" / "placement_baseline" / "results" / "placement_sweep.csv"
+
+sys.path.append(str(POLICY_BASELINE_DIR))
 
 from calc_skew_baselines import aggregate, load_rows  # noqa: E402
 
@@ -45,7 +49,15 @@ def within(actual: float, expected: float, rel_tol: float = 0.01, abs_tol: float
     return abs(actual - expected) <= max(abs_tol, abs(expected) * rel_tol)
 
 
+def ensure_inputs(placement_csv: pathlib.Path) -> None:
+    if not placement_csv.exists():
+        run_script = REPO_ROOT / "experiments" / "placement_baseline" / "run.py"
+        print(f"[policy_static_summary] placement CSV missing, running {run_script}")
+        subprocess.run([sys.executable, str(run_script)], check=True, cwd=REPO_ROOT)
+
+
 def run_regression(placement_csv: pathlib.Path, expected_csv: pathlib.Path) -> int:
+    ensure_inputs(placement_csv)
     rows = list(load_rows(placement_csv))
     actual = aggregate(rows)
     expectations = load_expected(expected_csv)
@@ -99,9 +111,8 @@ def run_regression(placement_csv: pathlib.Path, expected_csv: pathlib.Path) -> i
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    default_csv = pathlib.Path("experiments/placement_baseline/results/placement_sweep.csv")
-    default_expected = pathlib.Path(__file__).resolve().parent / "data" / "skew_tier_baselines_expected.csv"
-    parser.add_argument("--placement-csv", type=pathlib.Path, default=default_csv)
+    default_expected = POLICY_BASELINE_DIR / "tests" / "data" / "skew_tier_baselines_expected.csv"
+    parser.add_argument("--placement-csv", type=pathlib.Path, default=PLACEMENT_CSV)
     parser.add_argument("--expected", type=pathlib.Path, default=default_expected)
     args = parser.parse_args()
     return run_regression(args.placement_csv, args.expected)

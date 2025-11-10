@@ -708,6 +708,9 @@ void write_report(const CliOptions& options,
     out << "      \"max_us\": " << format_double(latency.max, 6) << "\n";
     out << "    }\n";
     out << "  },\n";
+    out << "  \"policy_metrics\": {\n";
+    out << "    \"waiting_reorders\": " << run_metrics.policy.waiting_reorders << "\n";
+    out << "  },\n";
     out << "  \"tasks\": [\n";
     for (std::size_t i = 0; i < run_metrics.tasks.size(); ++i) {
         const auto& timing = run_metrics.tasks[i];
@@ -980,7 +983,8 @@ namespace {
 
 void write_batch_csv_header(std::ofstream& out, const std::vector<std::string>& metadata_keys) {
     out << "run_name,profile,workload,policy,seed,host_mode,nic_mode,completed_tasks,makespan_us,"
-           "throughput_per_sec,mean_latency_us,p95_latency_us,p99_latency_us,peak_waiting_queue_depth,output_path";
+           "throughput_per_sec,mean_latency_us,p95_latency_us,p99_latency_us,peak_waiting_queue_depth,"
+           "waiting_reorders,output_path";
     for (const auto& key : metadata_keys) {
         out << "," << key;
     }
@@ -991,6 +995,7 @@ void append_batch_csv_row(std::ofstream& out,
                           const BatchRunSummary& result,
                           const std::vector<std::string>& metadata_keys) {
     const auto& aggregate = result.summary.metrics.aggregate;
+    const auto& policy_metrics = result.summary.metrics.policy;
     const auto& latency = aggregate.latency_stats;
     out << result.name << ","
         << result.options.profile_path.string() << ","
@@ -1006,6 +1011,7 @@ void append_batch_csv_row(std::ofstream& out,
         << format_double(latency.p95) << ","
         << format_double(latency.p99) << ","
         << aggregate.peak_waiting_queue_depth << ","
+        << policy_metrics.waiting_reorders << ","
         << result.options.output_path.string();
     for (const auto& key : metadata_keys) {
         auto it = result.metadata.find(key);

@@ -27,3 +27,13 @@ add_test(
     COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/tests/static_summary_regression_test.py
 )
+
+add_test(
+    NAME policy_batch_acceptance_test
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/tests/policy_batch_acceptance_test.py
+            --cli $<TARGET_FILE:nicloadoff_cli>
+            --manifest ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/batch.yaml
+            --csv ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/results/policy_baseline.csv
+            --expected ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/tests/data/skew_tier_baselines_expected.csv
+)

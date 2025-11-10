@@ -32,6 +32,8 @@ BASE_COLUMNS = [
     "p95_latency_us",
     "p99_latency_us",
     "peak_waiting_queue_depth",
+    "waiting_reorders",
+    "waiting_reorders_per_task",
     "output_path",
     "arrival_model",
     "background_load",
@@ -47,6 +49,8 @@ NUMERIC_FIELDS = [
     "p95_latency_us",
     "p99_latency_us",
     "peak_waiting_queue_depth",
+    "waiting_reorders",
+    "waiting_reorders_per_task",
 ]
 
 BASELINE_COLUMNS = [
@@ -135,8 +139,15 @@ def aggregate_rows(rows: List[Dict[str, str]],
         aggregate: Dict[str, str] = {key: entries[0][key] for key in BASE_COLUMNS if key not in NUMERIC_FIELDS}
         aggregate["run_name"] = run_name
         count = float(len(entries))
+        numeric_avgs: Dict[str, float] = {}
         for field in NUMERIC_FIELDS:
-            aggregate[field] = f"{sum(float(entry[field]) for entry in entries) / count:.6f}"
+            value = sum(float(entry.get(field, 0.0) or 0.0) for entry in entries) / count
+            numeric_avgs[field] = value
+            aggregate[field] = f"{value:.6f}"
+        total_tasks = sum(float(entry.get("completed_tasks", 0.0) or 0.0) for entry in entries)
+        total_reorders = sum(float(entry.get("waiting_reorders", 0.0) or 0.0) for entry in entries)
+        per_task = (total_reorders / total_tasks) if total_tasks > 0.0 else 0.0
+        aggregate["waiting_reorders_per_task"] = f"{per_task:.6f}"
         for column in metadata_columns:
             value = next((entry[column] for entry in entries if entry.get(column)), "")
             aggregate[column] = value
