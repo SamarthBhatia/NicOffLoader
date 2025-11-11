@@ -296,6 +296,8 @@ struct SimulationSnapshot {
     std::size_t active_task_count{0};
     std::optional<std::size_t> admission_limit;
     bool finished{false};
+    std::size_t policy_waiting_reorders{0};
+    double policy_waiting_reorders_per_task{0.0};
 };
 
 class SimulationSession {
@@ -374,6 +376,8 @@ class SimulationSession {
             snapshot.active_task_count = policy_snapshot.active_task_count;
             snapshot.admission_limit = policy_snapshot.admission_limit;
             snapshot.finished = finished_;
+            snapshot.policy_waiting_reorders = policy_snapshot.run_metrics.policy.waiting_reorders;
+            snapshot.policy_waiting_reorders_per_task = policy_snapshot.run_metrics.policy.waiting_reorders_per_task;
         } else {
             snapshot.finished = true;
         }
@@ -655,6 +659,10 @@ bool write_metrics_report(const SimulationSession& session,
     out << "    \"events_processed\": " << snapshot.events_processed << ",\n";
     out << "    \"completed_tasks\": " << run_metrics.tasks.size() << "\n";
     out << "  },\n";
+    out << "  \"policy_metrics\": {\n";
+    out << "    \"waiting_reorders\": " << run_metrics.policy.waiting_reorders << ",\n";
+    out << "    \"waiting_reorders_per_task\": " << format_double(run_metrics.policy.waiting_reorders_per_task, 6) << "\n";
+    out << "  },\n";
 
     out << "  \"tasks\": [\n";
     const auto& task_timings = run_metrics.tasks;
@@ -813,6 +821,8 @@ void draw_right_panel(WINDOW* win, const AppState& state, const SimulationSnapsh
     print_line("    Host service: " + format_double(snapshot.host_service_time, 3) + " us");
     print_line("    NIC service:  " + format_double(snapshot.nic_service_time, 3) + " us");
     print_line("  Completed tasks: " + std::to_string(snapshot.completed_tasks.size()));
+    print_line("  Policy waiting reorders: " + std::to_string(snapshot.policy_waiting_reorders) +
+               " (per task " + format_double(snapshot.policy_waiting_reorders_per_task, 4) + ")");
 
     if (!state.status_message.empty()) {
         print_line("  Message: " + state.status_message);

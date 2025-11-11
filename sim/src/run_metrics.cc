@@ -87,6 +87,12 @@ RunMetrics compute_run_metrics(const BasicScheduler& scheduler) {
     RunMetrics metrics = compute_run_metrics(scheduler.completed_metrics());
     metrics.aggregate.peak_waiting_queue_depth = scheduler.peak_waiting_queue_depth();
     metrics.policy.waiting_reorders = scheduler.policy_waiting_reorders();
+    const double task_count = static_cast<double>(metrics.tasks.size());
+    if (task_count > 0.0) {
+        metrics.policy.waiting_reorders_per_task = static_cast<double>(metrics.policy.waiting_reorders) / task_count;
+    } else {
+        metrics.policy.waiting_reorders_per_task = 0.0;
+    }
     return metrics;
 }
 

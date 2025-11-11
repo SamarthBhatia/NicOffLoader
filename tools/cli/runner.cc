@@ -709,7 +709,8 @@ void write_report(const CliOptions& options,
     out << "    }\n";
     out << "  },\n";
     out << "  \"policy_metrics\": {\n";
-    out << "    \"waiting_reorders\": " << run_metrics.policy.waiting_reorders << "\n";
+    out << "    \"waiting_reorders\": " << run_metrics.policy.waiting_reorders << ",\n";
+    out << "    \"waiting_reorders_per_task\": " << format_double(run_metrics.policy.waiting_reorders_per_task, 6) << "\n";
     out << "  },\n";
     out << "  \"tasks\": [\n";
     for (std::size_t i = 0; i < run_metrics.tasks.size(); ++i) {
@@ -984,7 +985,7 @@ namespace {
 void write_batch_csv_header(std::ofstream& out, const std::vector<std::string>& metadata_keys) {
     out << "run_name,profile,workload,policy,seed,host_mode,nic_mode,completed_tasks,makespan_us,"
            "throughput_per_sec,mean_latency_us,p95_latency_us,p99_latency_us,peak_waiting_queue_depth,"
-           "waiting_reorders,output_path";
+           "waiting_reorders,waiting_reorders_per_task,output_path";
     for (const auto& key : metadata_keys) {
         out << "," << key;
     }
@@ -997,6 +998,10 @@ void append_batch_csv_row(std::ofstream& out,
     const auto& aggregate = result.summary.metrics.aggregate;
     const auto& policy_metrics = result.summary.metrics.policy;
     const auto& latency = aggregate.latency_stats;
+    const double waiting_ratio =
+        result.summary.completed_tasks > 0
+            ? static_cast<double>(policy_metrics.waiting_reorders) / static_cast<double>(result.summary.completed_tasks)
+            : 0.0;
     out << result.name << ","
         << result.options.profile_path.string() << ","
         << result.options.workload_path.string() << ","
@@ -1012,6 +1017,7 @@ void append_batch_csv_row(std::ofstream& out,
         << format_double(latency.p99) << ","
         << aggregate.peak_waiting_queue_depth << ","
         << policy_metrics.waiting_reorders << ","
+        << format_double(waiting_ratio) << ","
         << result.options.output_path.string();
     for (const auto& key : metadata_keys) {
         auto it = result.metadata.find(key);

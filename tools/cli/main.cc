@@ -40,6 +40,9 @@ int main(int argc, char** argv) {
         std::cout << "Completed " << summary.completed_tasks << " tasks in "
                   << format_value(summary.makespan_us) << " us\n";
         std::cout << "Throughput: " << format_value(summary.throughput_per_sec) << " tasks/s\n";
+        const auto& policy_metrics = summary.metrics.policy;
+        std::cout << "Policy waiting reorders: " << policy_metrics.waiting_reorders
+                  << " (per task " << format_value(policy_metrics.waiting_reorders_per_task, 6) << ")\n";
         std::cout << "Report written to " << options.output_path << "\n";
         if (summary.metrics.aggregate.latency_stats.count > 0) {
             const auto& stats = summary.metrics.aggregate.latency_stats;

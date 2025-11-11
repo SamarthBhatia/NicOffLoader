@@ -31,8 +31,8 @@ and will append new rows to the CSV automatically. The `summarize.py` helper rea
  table (sort by throughput by default or mean latency via `--sort mean_latency`), and now surfaces
 `arrival_label`/`background_load`/`zipf_alpha` columns automatically while still supporting metadata-aware filtering/grouping
 (`--filter workload_label=skew_dag --group-by policy`) plus extra columns via `--columns`. Its output now includes both a
-`reorders` column sourced from `policy_metrics.waiting_reorders` and a normalized `reorders_per_task` ratio
-(computed on the fly when the column is missing), so you can
+ `reorders` column sourced from `policy_metrics.waiting_reorders` and a normalized `reorders_per_task` ratio
+ recorded straight from the batch CSV, so you can
 immediately spot reorder-heavy runs (grouped views average the counts). `export_normalized.py`
 groups repeated runs, emits both a normalized CSV and (optionally) Parquet table (requires `pyarrow`),
 mirrors the `policy_metrics.waiting_reorders` counter into those exports, derives a `waiting_reorders_per_task`
@@ -78,6 +78,6 @@ throughput/latency per tier. The current snapshot (seed 1, BF2 profile) is:
 These numbers provide the ground truth deltas policy hooks should target when prioritising NIC placement. Update
 the table after re-running the placement sweep with new profiles or arrival tiers. The acceptance test above
 re-runs the policy batch and then drives `workloads/tests/policy_queue_flip.yaml` (two host-heavy tasks followed by a NIC-heavy task contending for the same host CPUs). It confirms each skew tier (identified by `workload_label`, `arrival_label`,
-and `background_load`) appears in the batch CSV with both prefer-host and prefer-NIC policies and checks that the queue-flip scenario records at least one waiting-queue reorder plus a reduced queue time for the NIC-heavy task. To support that check,
+and `background_load`) appears in the batch CSV with both prefer-host and prefer-NIC policies, checks that the queue-flip scenario records at least one waiting-queue reorder plus a reduced queue time for the NIC-heavy task, **and now asserts that the queue-flip prefer-NIC batch row reports `waiting_reorders_per_task > 0`** so regressions immediately trip if reordering disappears. To support that check,
 every CLI JSON report now includes a `policy_metrics` object with a `waiting_reorders` counter, and the batch CSV plus
 normalized exports keep that column—along with the derived `waiting_reorders_per_task` ratio—in sync for quick analysis, dashboards, and plots.

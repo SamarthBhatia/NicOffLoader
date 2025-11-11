@@ -9,7 +9,7 @@ import json
 import pathlib
 import subprocess
 import sys
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[2]
@@ -34,11 +34,16 @@ def run_batch(cli_path: pathlib.Path, manifest_path: pathlib.Path, csv_path: pat
         raise SystemExit(f"batch run did not create {csv_path}")
 
 
-def csv_has_waiting_reorders(path: pathlib.Path) -> bool:
+REQUIRED_POLICY_COLUMNS = ("waiting_reorders", "waiting_reorders_per_task")
+
+
+def missing_policy_columns(path: pathlib.Path) -> List[str]:
     with path.open() as handle:
         reader = csv.reader(handle)
         header = next(reader, [])
-    return "waiting_reorders" in header
+    header = header or []
+    missing = [column for column in REQUIRED_POLICY_COLUMNS if column not in header]
+    return missing
 
 
 def load_expected(path: pathlib.Path) -> Dict[Key, None]:
@@ -53,7 +58,7 @@ def load_expected(path: pathlib.Path) -> Dict[Key, None]:
     return expectations
 
 
-def load_policy_rows(path: pathlib.Path) -> Dict[Key, Dict[str, Dict[str, float]]]:
+def load_policy_rows(path: pathlib.Path) -> Tuple[List[Dict[str, str]], Dict[Key, Dict[str, Dict[str, float]]]]:
     with path.open() as handle:
         reader = csv.DictReader(handle)
         rows = list(reader)
@@ -68,17 +73,41 @@ def load_policy_rows(path: pathlib.Path) -> Dict[Key, Dict[str, Dict[str, float]
             "throughput_per_sec": float(row["throughput_per_sec"]),
             "mean_latency_us": float(row["mean_latency_us"]),
         }
-    return grouped
+    return rows, grouped
+
+
+def ensure_queue_flip_reorders(rows: List[Dict[str, str]]) -> List[str]:
+    failures: List[str] = []
+    target = next((row for row in rows if row.get("run_name") == "queue-flip-prefer-nic"), None)
+    if not target:
+        failures.append("queue-flip-prefer-nic row missing from policy CSV")
+        return failures
+    waiting_reorders = float(target.get("waiting_reorders", 0.0) or 0.0)
+    ratio_field = target.get("waiting_reorders_per_task")
+    completed = float(target.get("completed_tasks", 0.0) or 0.0)
+    ratio = waiting_reorders / completed if completed > 0.0 else 0.0
+    if waiting_reorders <= 0.0:
+        failures.append("queue-flip-prefer-nic waiting_reorders <= 0")
+    if ratio <= 0.0:
+        failures.append("queue-flip-prefer-nic waiting_reorders_per_task <= 0")
+    if ratio_field is not None:
+        ratio_value = float(ratio_field or 0.0)
+        if ratio_value <= 0.0:
+            failures.append("queue-flip-prefer-nic CSV waiting_reorders_per_task column <= 0")
+    else:
+        failures.append("queue-flip-prefer-nic missing waiting_reorders_per_task column value")
+    return failures
 
 
 def run_acceptance(cli_path: pathlib.Path, manifest_path: pathlib.Path, csv_path: pathlib.Path, expected: pathlib.Path) -> int:
     run_batch(cli_path, manifest_path, csv_path)
     expectations = load_expected(expected)
-    actual = load_policy_rows(csv_path)
+    rows, actual = load_policy_rows(csv_path)
     failures = []
 
-    if not csv_has_waiting_reorders(csv_path):
-        failures.append("policy CSV missing waiting_reorders column")
+    missing_columns = missing_policy_columns(csv_path)
+    if missing_columns:
+        failures.append(f"policy CSV missing columns: {', '.join(missing_columns)}")
 
     for key in expectations.keys():
         placements = actual.get(key)
@@ -104,6 +133,7 @@ def run_acceptance(cli_path: pathlib.Path, manifest_path: pathlib.Path, csv_path
             failures.append(f"unexpected metadata group in policy CSV (update expectations?): {key}")
 
     failures.extend(verify_queue_flip(cli_path))
+    failures.extend(ensure_queue_flip_reorders(rows))
 
     if failures:
         print("[policy_batch_acceptance] FAIL")

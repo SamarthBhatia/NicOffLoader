@@ -41,6 +41,7 @@ struct RunAggregateMetrics {
 
 struct PolicyRunMetrics {
     std::size_t waiting_reorders{0};
+    double waiting_reorders_per_task{0.0};
 };
 
 struct RunMetrics {

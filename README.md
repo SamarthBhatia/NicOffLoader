@@ -135,6 +135,7 @@ Once you have a profile and workload YAML ready, invoke the single-run CLI and o
 ```
 
 Available policy identifiers match the TUI presets: `none`, `descending-id`, `limit-active-1`, `prefer-host`, and `prefer-nic`.
+Each run summary now prints the policy’s waiting-queue reorder count and normalized per-task ratio in addition to throughput/latency so you can confirm policy hooks are active without opening the JSON report.
 
 You can also supply defaults via a manifest:
 
@@ -210,7 +211,7 @@ The interactive TUI lets you inspect profiles, step through workloads, and exper
    ```
 3. Use the on-screen hints—`↑/↓` navigate menus, `Tab` swaps between profile/workload lists, `Space` toggles run/pause, `n` steps a single event, `H`/`N` toggle deterministic vs. stochastic sampling, `p` cycles built-in policies, `s` saves metrics, and `q` exits.
 
-The status panel shows the active policy, admission limits (if any), and live queue/resource metrics derived from the scheduler’s policy snapshot.
+The status panel shows the active policy, admission limits (if any), live queue/resource metrics, and the cumulative policy waiting-reorder count + per-task ratio so you can watch hooks make progress while stepping through events.
 
 ## Technology Stack (current plan)
 - C++20 for simulator and policy modules.
