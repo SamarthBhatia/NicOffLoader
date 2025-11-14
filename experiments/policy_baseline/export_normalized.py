@@ -34,6 +34,9 @@ BASE_COLUMNS = [
     "peak_waiting_queue_depth",
     "waiting_reorders",
     "waiting_reorders_per_task",
+    "waiting_reorders_recent",
+    "waiting_reorder_recent_task_count",
+    "waiting_reorders_per_task_recent",
     "output_path",
     "arrival_model",
     "background_load",
@@ -51,6 +54,9 @@ NUMERIC_FIELDS = [
     "peak_waiting_queue_depth",
     "waiting_reorders",
     "waiting_reorders_per_task",
+    "waiting_reorders_recent",
+    "waiting_reorder_recent_task_count",
+    "waiting_reorders_per_task_recent",
 ]
 
 BASELINE_COLUMNS = [
@@ -148,6 +154,10 @@ def aggregate_rows(rows: List[Dict[str, str]],
         total_reorders = sum(float(entry.get("waiting_reorders", 0.0) or 0.0) for entry in entries)
         per_task = (total_reorders / total_tasks) if total_tasks > 0.0 else 0.0
         aggregate["waiting_reorders_per_task"] = f"{per_task:.6f}"
+        total_recent_reorders = sum(float(entry.get("waiting_reorders_recent", 0.0) or 0.0) for entry in entries)
+        total_recent_tasks = sum(float(entry.get("waiting_reorder_recent_task_count", 0.0) or 0.0) for entry in entries)
+        recent_ratio = (total_recent_reorders / total_recent_tasks) if total_recent_tasks > 0.0 else 0.0
+        aggregate["waiting_reorders_per_task_recent"] = f"{recent_ratio:.6f}"
         for column in metadata_columns:
             value = next((entry[column] for entry in entries if entry.get(column)), "")
             aggregate[column] = value

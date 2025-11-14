@@ -61,6 +61,7 @@ int main() {
     check(summary.completed_tasks == 2, "expected two completed tasks");
     check(summary.metrics.aggregate.latency_stats.count == 2, "expected two latency samples");
     check(summary.metrics.tasks.size() == 2, "expected two task metric entries");
+    check(summary.rolling_metrics.waiting_queue_depth.samples > 0, "expected rolling metrics to record queue depth");
 
     std::ifstream input(options.output_path);
     check(static_cast<bool>(input), "expected report file to open");
@@ -71,6 +72,7 @@ int main() {
     assert_contains(content, "\"workload\": {", "expected workload section");
     assert_contains(content, "\"run\": {", "expected run section");
     assert_contains(content, "\"aggregates\": {", "expected aggregates section");
+    assert_contains(content, "\"rolling_metrics\": {", "expected rolling metrics section");
     assert_contains(content, "\"tasks\": [", "expected task list section");
     assert_contains(content, "\"completed_tasks\": 2", "expected completed task count");
     assert_contains(content, "\"throughput_tasks_per_sec\": 400000.000000", "expected throughput value");

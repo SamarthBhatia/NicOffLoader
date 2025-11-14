@@ -67,3 +67,8 @@ add_executable(run_metrics_test run_metrics_test.cc)
 target_link_libraries(run_metrics_test PRIVATE nicloadoff_sim)
 
 add_test(NAME run_metrics_test COMMAND run_metrics_test)
+
+add_executable(rolling_runtime_metrics_test rolling_runtime_metrics_test.cc)
+target_link_libraries(rolling_runtime_metrics_test PRIVATE nicloadoff_sim)
+
+add_test(NAME rolling_runtime_metrics_test COMMAND rolling_runtime_metrics_test)

@@ -4,6 +4,7 @@ set(SIM_SOURCES
     src/dag_runtime.cc
     src/resource.cc
     src/scheduler.cc
+    src/rolling_runtime_metrics.cc
     src/profile_resources.cc
     src/service_time_model.cc
     src/workload.cc

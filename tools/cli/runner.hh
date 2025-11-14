@@ -1,6 +1,7 @@
 #ifndef NICLOADOFF_TOOLS_CLI_RUNNER_HH
 #define NICLOADOFF_TOOLS_CLI_RUNNER_HH
 
+#include "nicloadoff/rolling_metrics_types.hh"
 #include "nicloadoff/run_metrics.hh"
 #include "nicloadoff/task.hh"
 
@@ -33,6 +34,7 @@ struct RunSummary {
     Duration makespan_us{0.0};
     double throughput_per_sec{0.0};
     RunMetrics metrics;
+    PolicyRollingMetrics rolling_metrics;
 };
 
 void print_usage(std::ostream& out);

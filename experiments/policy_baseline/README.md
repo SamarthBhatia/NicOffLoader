@@ -31,9 +31,8 @@ and will append new rows to the CSV automatically. The `summarize.py` helper rea
  table (sort by throughput by default or mean latency via `--sort mean_latency`), and now surfaces
 `arrival_label`/`background_load`/`zipf_alpha` columns automatically while still supporting metadata-aware filtering/grouping
 (`--filter workload_label=skew_dag --group-by policy`) plus extra columns via `--columns`. Its output now includes both a
- `reorders` column sourced from `policy_metrics.waiting_reorders` and a normalized `reorders_per_task` ratio
- recorded straight from the batch CSV, so you can
-immediately spot reorder-heavy runs (grouped views average the counts). `export_normalized.py`
+ `reorders` column sourced from `policy_metrics.waiting_reorders` and both normalized ratios:
+`reorders_per_task` (entire run) and `reorders_per_task_recent`, which captures the last 100 completed tasks (plus the effective window length) straight from the batch CSV so you can immediately spot spikes without waiting for the full run to finish (grouped views average the counts). `export_normalized.py`
 groups repeated runs, emits both a normalized CSV and (optionally) Parquet table (requires `pyarrow`),
 mirrors the `policy_metrics.waiting_reorders` counter into those exports, derives a `waiting_reorders_per_task`
 metric so notebooks can reason about reorder rates independent of throughput, and can join the static placement summary (`--static-summary`, defaults to `results/dag_static_summary.csv`)
@@ -46,10 +45,23 @@ batch CSV (and therefore in the normalized export) so downstream tooling can piv
 without guessing from the workload name. The manifest now also ships the `policy_queue_flip` workload (prefer-host vs.
 prefer-nic), which deterministically produces waiting-queue reorders so that the new ratio columns have non-zero coverage in every sweep.
 `plots/policy_baseline.py` consumes the normalized CSV to render throughput/latency comparison charts
-plus a waiting-reorder subplot that now charts the per-task ratio (and annotates total counts) and stores them under `plots/generated/`. `import_static_traces.py` ingests the static placement sweep
+plus a waiting-reorder subplot that now charts both the cumulative and recent per-task ratios (annotating total and recent-window counts) and stores them under `plots/generated/`. If you prefer working directly in pandas/BI tooling, see `notebooks/rolling_reorder_example.md` for a lightweight walkthrough that loads `policy_baseline_normalized.csv`, prints the relevant columns, and recreates the side-by-side ratio plot from a notebook.
+`import_static_traces.py` ingests the static placement sweep
 CSV and emits `dag_static_summary.csv`, capturing host- vs. NIC-pinned baselines for the skewed DAG
 scenarios so policy experiments can reference the fixed placements directly; the generated summary now
 feeds `tests/static_summary_regression_test.py`, which runs via `ctest` to keep those deltas pinned.
+
+### One-shot analysis helper
+
+Use `experiments/policy_baseline/run_analysis.sh` to regenerate the normalized CSV, plot, and pandas walkthrough in one go:
+
+```bash
+./experiments/policy_baseline/run_analysis.sh
+# or via CMake/Ninja:
+cmake --build build --target policy_analysis
+```
+
+The script runs `export_normalized.py`, then `plots/policy_baseline.py`, and finally the pandas helper (`notebooks/rolling_reorder_example.py`). It automatically skips steps when optional dependencies are missing (install `matplotlib`/`pandas` via `python3 -m pip install <pkg>` to enable the full pipeline).
 
 ### Skew placement reference
 
@@ -78,6 +90,6 @@ throughput/latency per tier. The current snapshot (seed 1, BF2 profile) is:
 These numbers provide the ground truth deltas policy hooks should target when prioritising NIC placement. Update
 the table after re-running the placement sweep with new profiles or arrival tiers. The acceptance test above
 re-runs the policy batch and then drives `workloads/tests/policy_queue_flip.yaml` (two host-heavy tasks followed by a NIC-heavy task contending for the same host CPUs). It confirms each skew tier (identified by `workload_label`, `arrival_label`,
-and `background_load`) appears in the batch CSV with both prefer-host and prefer-NIC policies, checks that the queue-flip scenario records at least one waiting-queue reorder plus a reduced queue time for the NIC-heavy task, **and now asserts that the queue-flip prefer-NIC batch row reports `waiting_reorders_per_task > 0`** so regressions immediately trip if reordering disappears. To support that check,
-every CLI JSON report now includes a `policy_metrics` object with a `waiting_reorders` counter, and the batch CSV plus
-normalized exports keep that column—along with the derived `waiting_reorders_per_task` ratio—in sync for quick analysis, dashboards, and plots.
+ and `background_load`) appears in the batch CSV with both prefer-host and prefer-NIC policies, checks that the queue-flip scenario records at least one waiting-queue reorder plus a reduced queue time for the NIC-heavy task, **and now asserts that the queue-flip prefer-NIC batch row reports both `waiting_reorders_per_task > 0` and `waiting_reorders_per_task_recent > 0` (with a non-zero recent window)** so regressions immediately trip if reordering disappears or the rolling estimator stops updating. To support that check,
+every CLI JSON report now includes a `policy_metrics` object with both cumulative and rolling counters, and the batch CSV plus
+normalized exports keep those columns—along with the derived ratios and window size—in sync for quick analysis, dashboards, and plots.

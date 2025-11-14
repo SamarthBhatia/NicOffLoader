@@ -2,6 +2,7 @@
 #define NICLOADOFF_POLICY_STATE_HH
 
 #include "nicloadoff/resource.hh"
+#include "nicloadoff/rolling_metrics_types.hh"
 #include "nicloadoff/run_metrics_types.hh"
 #include "nicloadoff/sim_types.hh"
 
@@ -42,6 +43,7 @@ struct PolicyStateSnapshot {
     SimTime current_time{0.0};
     PolicyQueuesState queues{};
     RunMetrics run_metrics{};
+    PolicyRollingMetrics rolling_metrics{};
     std::vector<PolicyResourceState> resources;
     std::vector<PolicyTaskState> tasks;
     std::vector<TaskId> waiting_task_order;

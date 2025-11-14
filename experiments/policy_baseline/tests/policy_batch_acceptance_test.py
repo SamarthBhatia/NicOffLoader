@@ -34,7 +34,13 @@ def run_batch(cli_path: pathlib.Path, manifest_path: pathlib.Path, csv_path: pat
         raise SystemExit(f"batch run did not create {csv_path}")
 
 
-REQUIRED_POLICY_COLUMNS = ("waiting_reorders", "waiting_reorders_per_task")
+REQUIRED_POLICY_COLUMNS = (
+    "waiting_reorders",
+    "waiting_reorders_per_task",
+    "waiting_reorders_recent",
+    "waiting_reorder_recent_task_count",
+    "waiting_reorders_per_task_recent",
+)
 
 
 def missing_policy_columns(path: pathlib.Path) -> List[str]:
@@ -84,6 +90,9 @@ def ensure_queue_flip_reorders(rows: List[Dict[str, str]]) -> List[str]:
         return failures
     waiting_reorders = float(target.get("waiting_reorders", 0.0) or 0.0)
     ratio_field = target.get("waiting_reorders_per_task")
+    recent_ratio_field = target.get("waiting_reorders_per_task_recent")
+    recent_window_field = target.get("waiting_reorder_recent_task_count")
+    recent_reorders_field = target.get("waiting_reorders_recent")
     completed = float(target.get("completed_tasks", 0.0) or 0.0)
     ratio = waiting_reorders / completed if completed > 0.0 else 0.0
     if waiting_reorders <= 0.0:
@@ -96,6 +105,24 @@ def ensure_queue_flip_reorders(rows: List[Dict[str, str]]) -> List[str]:
             failures.append("queue-flip-prefer-nic CSV waiting_reorders_per_task column <= 0")
     else:
         failures.append("queue-flip-prefer-nic missing waiting_reorders_per_task column value")
+    if recent_ratio_field is not None:
+        recent_ratio = float(recent_ratio_field or 0.0)
+        if recent_ratio <= 0.0:
+            failures.append("queue-flip-prefer-nic CSV waiting_reorders_per_task_recent column <= 0")
+    else:
+        failures.append("queue-flip-prefer-nic missing waiting_reorders_per_task_recent column value")
+    if recent_window_field is None:
+        failures.append("queue-flip-prefer-nic missing waiting_reorder_recent_task_count column value")
+    else:
+        window = float(recent_window_field or 0.0)
+        if window <= 0.0:
+            failures.append("queue-flip-prefer-nic waiting_reorder_recent_task_count <= 0")
+    if recent_reorders_field is None:
+        failures.append("queue-flip-prefer-nic missing waiting_reorders_recent column value")
+    else:
+        recent_reorders = float(recent_reorders_field or 0.0)
+        if recent_reorders <= 0.0:
+            failures.append("queue-flip-prefer-nic waiting_reorders_recent <= 0")
     return failures
 
 

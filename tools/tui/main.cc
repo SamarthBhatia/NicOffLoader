@@ -298,6 +298,9 @@ struct SimulationSnapshot {
     bool finished{false};
     std::size_t policy_waiting_reorders{0};
     double policy_waiting_reorders_per_task{0.0};
+    std::size_t policy_waiting_reorders_recent{0};
+    std::size_t policy_waiting_reorder_recent_task_count{0};
+    double policy_waiting_reorders_per_task_recent{0.0};
 };
 
 class SimulationSession {
@@ -378,6 +381,11 @@ class SimulationSession {
             snapshot.finished = finished_;
             snapshot.policy_waiting_reorders = policy_snapshot.run_metrics.policy.waiting_reorders;
             snapshot.policy_waiting_reorders_per_task = policy_snapshot.run_metrics.policy.waiting_reorders_per_task;
+            snapshot.policy_waiting_reorders_recent = policy_snapshot.run_metrics.policy.waiting_reorders_recent;
+            snapshot.policy_waiting_reorder_recent_task_count =
+                policy_snapshot.run_metrics.policy.waiting_reorder_recent_task_count;
+            snapshot.policy_waiting_reorders_per_task_recent =
+                policy_snapshot.run_metrics.policy.waiting_reorders_per_task_recent;
         } else {
             snapshot.finished = true;
         }
@@ -823,6 +831,10 @@ void draw_right_panel(WINDOW* win, const AppState& state, const SimulationSnapsh
     print_line("  Completed tasks: " + std::to_string(snapshot.completed_tasks.size()));
     print_line("  Policy waiting reorders: " + std::to_string(snapshot.policy_waiting_reorders) +
                " (per task " + format_double(snapshot.policy_waiting_reorders_per_task, 4) + ")");
+    if (snapshot.policy_waiting_reorder_recent_task_count > 0) {
+        print_line("    Recent (" + std::to_string(snapshot.policy_waiting_reorder_recent_task_count) +
+                   " tasks): " + format_double(snapshot.policy_waiting_reorders_per_task_recent, 4));
+    }
 
     if (!state.status_message.empty()) {
         print_line("  Message: " + state.status_message);

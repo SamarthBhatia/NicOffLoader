@@ -8,6 +8,7 @@
 #include <queue>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 namespace nicloadoff {
 
@@ -22,7 +23,13 @@ namespace {
 } // namespace
 
 BasicScheduler::BasicScheduler(ResourcePool resources, ServiceTimeModel* service_model)
-    : resources_(std::move(resources)), service_model_(service_model) {}
+    : resources_(std::move(resources)),
+      service_model_(service_model),
+      rolling_metrics_(kRollingQueueWindowUs, kRollingUtilizationWindowUs, kRollingSojournWindowTasks) {
+    initialize_domain_usage();
+    rolling_metrics_.record_queue_depth(current_time_, 0.0);
+    record_utilization_sample(current_time_);
+}
 
 void BasicScheduler::submit_task(const Task& task) {
     if (tasks_.count(task.id) != 0) {
@@ -98,7 +105,7 @@ void BasicScheduler::handle_task_ready(TaskId id, SimTime timestamp) {
     if (!started && waiting_set_.count(id) == 0) {
         waiting_set_.insert(id);
         waiting_queue_.push_back(id);
-        record_waiting_queue_depth();
+        record_waiting_queue_sample();
         evaluate_policy_hook();
     }
 }
@@ -121,7 +128,9 @@ void BasicScheduler::handle_task_complete(TaskId id, SimTime timestamp) {
     const TaskStage& stage = ctx.task.stages[ctx.stage_index];
     for (const auto& requirement : stage.requirements) {
         resources_.release(requirement.resource_id, requirement.units);
+        adjust_domain_usage(requirement.resource_id, -requirement.units);
     }
+    record_utilization_sample(timestamp);
 
     if (ctx.active && active_task_count_ > 0) {
         --active_task_count_;
@@ -176,7 +185,9 @@ bool BasicScheduler::try_start_task(TaskContext& ctx, SimTime timestamp) {
 
     for (const auto& requirement : stage.requirements) {
         resources_.allocate(requirement.resource_id, requirement.units);
+        adjust_domain_usage(requirement.resource_id, requirement.units);
     }
+    record_utilization_sample(timestamp);
 
     Duration duration = resolve_service_time(stage, ctx.task.id);
 
@@ -253,10 +264,11 @@ void BasicScheduler::drain_waiting(SimTime timestamp) {
         }
         TaskId id = waiting_queue_.front();
         waiting_queue_.pop_front();
+        record_waiting_queue_sample();
         auto& ctx = get_task(id);
         if (!try_start_task(ctx, timestamp)) {
             waiting_queue_.push_back(id);
-            record_waiting_queue_depth();
+            record_waiting_queue_sample();
         }
         ++processed;
     }
@@ -303,6 +315,8 @@ void BasicScheduler::finalize_task_metrics(const TaskContext& ctx) {
         }
     }
     completed_metrics_.push_back(metrics);
+    rolling_metrics_.record_task(make_task_timing(metrics));
+    prune_waiting_reorder_marks();
 }
 
 std::optional<ScheduledEvent> BasicScheduler::next_event() const { return queue_.peek(); }
@@ -331,6 +345,10 @@ std::vector<BasicScheduler::TaskStatus> BasicScheduler::task_statuses() const {
 }
 
 RunMetrics BasicScheduler::aggregated_metrics() const { return compute_run_metrics(*this); }
+
+PolicyRollingMetrics BasicScheduler::rolling_metrics_snapshot() const {
+    return rolling_metrics_.snapshot(current_time_);
+}
 
 void BasicScheduler::evaluate_policy_hook() {
     if (policy_hook_ == nullptr) {
@@ -380,6 +398,8 @@ void BasicScheduler::apply_waiting_reorder(const std::vector<TaskId>& preferred_
     waiting_queue_ = std::move(reordered);
     if (changed && waiting_queue_.size() > 1) {
         ++policy_waiting_reorders_;
+        policy_waiting_reorder_marks_.push_back(completed_tasks_.size());
+        prune_waiting_reorder_marks();
     }
 }
 
@@ -391,10 +411,107 @@ void BasicScheduler::apply_admission_control(const policy::AdmissionControlDirec
     admission_limit_ = directive.max_active_tasks;
 }
 
-void BasicScheduler::record_waiting_queue_depth() {
+void BasicScheduler::record_waiting_queue_sample() {
     if (waiting_queue_.size() > peak_waiting_queue_depth_) {
         peak_waiting_queue_depth_ = waiting_queue_.size();
     }
+    rolling_metrics_.record_queue_depth(current_time_, static_cast<double>(waiting_queue_.size()));
+}
+
+void BasicScheduler::initialize_domain_usage() {
+    host_usage_ = DomainUsage{};
+    nic_usage_ = DomainUsage{};
+    const std::vector<Resource> snapshot = resources_.snapshot();
+    for (const auto& resource : snapshot) {
+        switch (resource.type()) {
+        case ResourceType::kHostCpu:
+        case ResourceType::kHostDram:
+        case ResourceType::kHostLink:
+            host_usage_.capacity += resource.capacity();
+            break;
+        case ResourceType::kNicCpu:
+        case ResourceType::kNicDram:
+        case ResourceType::kNicLink:
+            nic_usage_.capacity += resource.capacity();
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+void BasicScheduler::adjust_domain_usage(ResourceId resource_id, double delta) {
+    Resource* resource = resources_.find(resource_id);
+    if (resource == nullptr) {
+        return;
+    }
+    DomainUsage* usage = nullptr;
+    switch (resource->type()) {
+    case ResourceType::kHostCpu:
+    case ResourceType::kHostDram:
+    case ResourceType::kHostLink:
+        usage = &host_usage_;
+        break;
+    case ResourceType::kNicCpu:
+    case ResourceType::kNicDram:
+    case ResourceType::kNicLink:
+        usage = &nic_usage_;
+        break;
+    default:
+        return;
+    }
+    usage->in_use += delta;
+    if (usage->in_use < 0.0) {
+        usage->in_use = 0.0;
+    }
+    if (usage->in_use > usage->capacity) {
+        usage->in_use = usage->capacity;
+    }
+}
+
+void BasicScheduler::record_utilization_sample(SimTime timestamp) {
+    auto ratio = [](const DomainUsage& usage) -> double {
+        if (usage.capacity <= 0.0) {
+            return 0.0;
+        }
+        double value = usage.in_use / usage.capacity;
+        if (value < 0.0) {
+            value = 0.0;
+        } else if (value > 1.0) {
+            value = 1.0;
+        }
+        return value;
+    };
+    rolling_metrics_.record_utilization(timestamp, ratio(host_usage_), ratio(nic_usage_));
+}
+
+void BasicScheduler::prune_waiting_reorder_marks() {
+    if (policy_waiting_reorder_marks_.empty()) {
+        return;
+    }
+    const std::size_t completed = completed_tasks_.size();
+    if (completed <= kPolicyWaitingReorderWindow) {
+        return;
+    }
+    const std::size_t threshold = completed - kPolicyWaitingReorderWindow;
+    auto first = std::lower_bound(policy_waiting_reorder_marks_.begin(),
+                                  policy_waiting_reorder_marks_.end(),
+                                  threshold);
+    if (first != policy_waiting_reorder_marks_.begin()) {
+        policy_waiting_reorder_marks_.erase(policy_waiting_reorder_marks_.begin(), first);
+    }
+}
+
+std::size_t BasicScheduler::policy_waiting_reorders_recent(std::size_t window) const {
+    if (window == 0 || policy_waiting_reorder_marks_.empty() || completed_tasks_.empty()) {
+        return 0;
+    }
+    const std::size_t completed = completed_tasks_.size();
+    const std::size_t threshold = completed > window ? completed - window : 0;
+    auto first = std::lower_bound(policy_waiting_reorder_marks_.begin(),
+                                  policy_waiting_reorder_marks_.end(),
+                                  threshold);
+    return static_cast<std::size_t>(std::distance(first, policy_waiting_reorder_marks_.end()));
 }
 
 PolicyStateSnapshot BasicScheduler::policy_state_snapshot() const {
@@ -403,8 +520,8 @@ PolicyStateSnapshot BasicScheduler::policy_state_snapshot() const {
     snapshot.queues.event_queue_depth = queue_.size();
     snapshot.queues.waiting_queue_depth = waiting_queue_.size();
     snapshot.queues.processed_events = events_processed_;
-    snapshot.run_metrics = compute_run_metrics(completed_metrics_);
-    snapshot.run_metrics.aggregate.peak_waiting_queue_depth = peak_waiting_queue_depth_;
+    snapshot.run_metrics = compute_run_metrics(*this);
+    snapshot.rolling_metrics = rolling_metrics_.snapshot(current_time_);
 
     const std::vector<Resource> resource_values = resources_.snapshot();
     snapshot.resources.reserve(resource_values.size());

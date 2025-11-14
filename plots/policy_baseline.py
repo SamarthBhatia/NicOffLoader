@@ -37,7 +37,10 @@ def load_metrics(csv_path: pathlib.Path) -> List[Tuple[str, Metrics]]:
                     "p99_latency": float(row["p99_latency_us"]),
                     "peak_queue": float(row["peak_waiting_queue_depth"]),
                     "waiting_reorders": float(row.get("waiting_reorders", 0.0) or 0.0),
-                    "waiting_ratio": float(row.get("waiting_reorders_per_task", 0.0) or 0.0),
+                    "waiting_ratio_total": float(row.get("waiting_reorders_per_task", 0.0) or 0.0),
+                    "waiting_reorders_recent": float(row.get("waiting_reorders_recent", 0.0) or 0.0),
+                    "waiting_ratio_recent": float(row.get("waiting_reorders_per_task_recent", 0.0) or 0.0),
+                    "waiting_recent_window": float(row.get("waiting_reorder_recent_task_count", 0.0) or 0.0),
                 }
             )
 
@@ -52,7 +55,10 @@ def load_metrics(csv_path: pathlib.Path) -> List[Tuple[str, Metrics]]:
             "p99_latency",
             "peak_queue",
             "waiting_reorders",
-            "waiting_ratio",
+            "waiting_ratio_total",
+            "waiting_reorders_recent",
+            "waiting_ratio_recent",
+            "waiting_recent_window",
         ]:
             summary[metric] = sum(entry[metric] for entry in entries) / count
         summaries.append((name, summary))
@@ -81,7 +87,10 @@ def plot(results: List[Tuple[str, Metrics]], output_path: pathlib.Path) -> None:
     p95_latency = [metrics["p95_latency"] for _, metrics in results]
     peak_queue = [metrics["peak_queue"] for _, metrics in results]
     waiting_reorders = [metrics["waiting_reorders"] for _, metrics in results]
-    waiting_ratio = [metrics["waiting_ratio"] for _, metrics in results]
+    waiting_reorders_recent = [metrics["waiting_reorders_recent"] for _, metrics in results]
+    waiting_ratio_total = [metrics["waiting_ratio_total"] for _, metrics in results]
+    waiting_ratio_recent = [metrics["waiting_ratio_recent"] for _, metrics in results]
+    waiting_recent_window = [metrics["waiting_recent_window"] for _, metrics in results]
 
     x = range(len(names))
     width = 0.35
@@ -120,18 +129,43 @@ def plot(results: List[Tuple[str, Metrics]], output_path: pathlib.Path) -> None:
     latency_axis.grid(axis="y", linestyle="--", alpha=0.4)
     latency_axis.legend()
 
-    reorder_bars = reorder_axis.bar(x, waiting_ratio, color="#c44e52")
+    reorder_bars_total = reorder_axis.bar(
+        [pos - width / 2 for pos in x],
+        waiting_ratio_total,
+        width=width,
+        label="per-task (entire run)",
+        color="#c44e52",
+    )
+    reorder_bars_recent = reorder_axis.bar(
+        [pos + width / 2 for pos in x],
+        waiting_ratio_recent,
+        width=width,
+        label="per-task (recent window)",
+        color="#8172b3",
+    )
     reorder_axis.set_xticks(x)
     reorder_axis.set_xticklabels(names, rotation=20, ha="right")
     reorder_axis.set_ylabel("waiting reorders per task")
-    reorder_axis.set_title("Policy reorder rate")
+    reorder_axis.set_title("Policy reorder rate (total vs recent)")
     reorder_axis.grid(axis="y", linestyle="--", alpha=0.4)
-    for bar, count in zip(reorder_bars, waiting_reorders):
+    reorder_axis.legend()
+    for bar, count in zip(reorder_bars_total, waiting_reorders):
         height = bar.get_height()
         reorder_axis.text(
             bar.get_x() + bar.get_width() / 2.0,
             height,
             f"{height:.4f}\n({count:.0f} total)",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
+    for bar, count, window in zip(reorder_bars_recent, waiting_reorders_recent, waiting_recent_window):
+        height = bar.get_height()
+        window_label = f"{int(window):d}" if window > 0 else "-"
+        reorder_axis.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            height,
+            f"{height:.4f}\n({count:.0f}/{window_label})",
             ha="center",
             va="bottom",
             fontsize=8,

@@ -4,6 +4,7 @@
 #include "nicloadoff/event_queue.hh"
 #include "nicloadoff/policy_hook.hh"
 #include "nicloadoff/resource.hh"
+#include "nicloadoff/rolling_runtime_metrics.hh"
 #include "nicloadoff/task.hh"
 
 #include <deque>
@@ -28,6 +29,11 @@ class SchedulerError : public std::runtime_error {
 
 class BasicScheduler {
   public:
+    static constexpr std::size_t kPolicyWaitingReorderWindow = 100;
+    static constexpr Duration kRollingQueueWindowUs = 50'000.0;
+    static constexpr Duration kRollingUtilizationWindowUs = 50'000.0;
+    static constexpr std::size_t kRollingSojournWindowTasks = 128;
+
     struct TaskStatus {
         TaskId id{};
         std::size_t stage_index{0};
@@ -67,8 +73,10 @@ class BasicScheduler {
     [[nodiscard]] bool has_pending_work() const noexcept { return !queue_.empty() || !waiting_queue_.empty(); }
     [[nodiscard]] const std::vector<TaskMetrics>& completed_metrics() const noexcept { return completed_metrics_; }
     [[nodiscard]] RunMetrics aggregated_metrics() const;
+    [[nodiscard]] PolicyRollingMetrics rolling_metrics_snapshot() const;
     [[nodiscard]] PolicyStateSnapshot policy_state_snapshot() const;
     [[nodiscard]] std::size_t policy_waiting_reorders() const noexcept { return policy_waiting_reorders_; }
+    [[nodiscard]] std::size_t policy_waiting_reorders_recent(std::size_t window) const;
 
   private:
     struct StageRuntime {
@@ -106,6 +114,7 @@ class BasicScheduler {
     std::size_t events_processed_{0};
     std::vector<TaskMetrics> completed_metrics_;
     std::size_t policy_waiting_reorders_{0};
+    std::deque<std::size_t> policy_waiting_reorder_marks_;
     std::map<std::string, std::string> scenario_metadata_;
 
     void handle_event(const ScheduledEvent& event);
@@ -122,7 +131,20 @@ class BasicScheduler {
     void evaluate_policy_hook();
     void apply_waiting_reorder(const std::vector<TaskId>& preferred_order);
     void apply_admission_control(const policy::AdmissionControlDirective& directive);
-    void record_waiting_queue_depth();
+    void record_waiting_queue_sample();
+    void initialize_domain_usage();
+    void adjust_domain_usage(ResourceId resource_id, double delta);
+    void record_utilization_sample(SimTime timestamp);
+    void prune_waiting_reorder_marks();
+
+    struct DomainUsage {
+        double capacity{0.0};
+        double in_use{0.0};
+    };
+
+    RollingRuntimeMetrics rolling_metrics_;
+    DomainUsage host_usage_;
+    DomainUsage nic_usage_;
 };
 
 } // namespace nicloadoff

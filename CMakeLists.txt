@@ -37,3 +37,10 @@ add_test(
             --csv ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/results/policy_baseline.csv
             --expected ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/tests/data/skew_tier_baselines_expected.csv
 )
+
+add_custom_target(
+    policy_analysis
+    COMMAND ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/run_analysis.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Export/plot/pandas policy baseline analysis outputs"
+)

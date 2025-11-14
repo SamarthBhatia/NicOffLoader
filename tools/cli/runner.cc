@@ -644,6 +644,7 @@ void write_report(const CliOptions& options,
                   const config::Profile& profile,
                   const LoadedWorkload& workload_doc,
                   const RunMetrics& run_metrics,
+                  const PolicyRollingMetrics& rolling_metrics,
                   SimTime start_time,
                   SimTime finish_time,
                   Duration makespan,
@@ -710,7 +711,39 @@ void write_report(const CliOptions& options,
     out << "  },\n";
     out << "  \"policy_metrics\": {\n";
     out << "    \"waiting_reorders\": " << run_metrics.policy.waiting_reorders << ",\n";
-    out << "    \"waiting_reorders_per_task\": " << format_double(run_metrics.policy.waiting_reorders_per_task, 6) << "\n";
+    out << "    \"waiting_reorders_per_task\": " << format_double(run_metrics.policy.waiting_reorders_per_task, 6) << ",\n";
+    out << "    \"waiting_reorders_recent\": " << run_metrics.policy.waiting_reorders_recent << ",\n";
+    out << "    \"waiting_reorder_recent_task_count\": " << run_metrics.policy.waiting_reorder_recent_task_count << ",\n";
+    out << "    \"waiting_reorders_per_task_recent\": "
+        << format_double(run_metrics.policy.waiting_reorders_per_task_recent, 6) << "\n";
+    out << "  },\n";
+    out << "  \"rolling_metrics\": {\n";
+    out << "    \"waiting_queue_depth\": {\n";
+    out << "      \"samples\": " << rolling_metrics.waiting_queue_depth.samples << ",\n";
+    out << "      \"latest\": " << format_double(rolling_metrics.waiting_queue_depth.latest, 6) << ",\n";
+    out << "      \"average\": " << format_double(rolling_metrics.waiting_queue_depth.average, 6) << ",\n";
+    out << "      \"peak\": " << format_double(rolling_metrics.waiting_queue_depth.peak, 6) << "\n";
+    out << "    },\n";
+    out << "    \"host_utilization\": {\n";
+    out << "      \"samples\": " << rolling_metrics.host_utilization.samples << ",\n";
+    out << "      \"latest\": " << format_double(rolling_metrics.host_utilization.latest, 6) << ",\n";
+    out << "      \"average\": " << format_double(rolling_metrics.host_utilization.average, 6) << ",\n";
+    out << "      \"peak\": " << format_double(rolling_metrics.host_utilization.peak, 6) << "\n";
+    out << "    },\n";
+    out << "    \"nic_utilization\": {\n";
+    out << "      \"samples\": " << rolling_metrics.nic_utilization.samples << ",\n";
+    out << "      \"latest\": " << format_double(rolling_metrics.nic_utilization.latest, 6) << ",\n";
+    out << "      \"average\": " << format_double(rolling_metrics.nic_utilization.average, 6) << ",\n";
+    out << "      \"peak\": " << format_double(rolling_metrics.nic_utilization.peak, 6) << "\n";
+    out << "    },\n";
+    out << "    \"sojourn\": {\n";
+    out << "      \"samples\": " << rolling_metrics.sojourn.samples << ",\n";
+    out << "      \"mean_queue_time_us\": " << format_double(rolling_metrics.sojourn.mean_queue_time, 6) << ",\n";
+    out << "      \"mean_service_time_us\": " << format_double(rolling_metrics.sojourn.mean_service_time, 6) << ",\n";
+    out << "      \"mean_latency_us\": " << format_double(rolling_metrics.sojourn.mean_latency, 6) << ",\n";
+    out << "      \"p95_latency_us\": " << format_double(rolling_metrics.sojourn.p95_latency, 6) << ",\n";
+    out << "      \"p99_latency_us\": " << format_double(rolling_metrics.sojourn.p99_latency, 6) << "\n";
+    out << "    }\n";
     out << "  },\n";
     out << "  \"tasks\": [\n";
     for (std::size_t i = 0; i < run_metrics.tasks.size(); ++i) {
@@ -960,6 +993,7 @@ RunSummary run_simulation(const CliOptions& options) {
     }
 
     const RunMetrics run_metrics = scheduler.aggregated_metrics();
+    const PolicyRollingMetrics rolling_metrics = scheduler.rolling_metrics_snapshot();
     const SimTime finish_time = scheduler.current_time();
     const SimTime start_time = min_arrival_time(workload);
     Duration makespan = finish_time - start_time;
@@ -970,13 +1004,22 @@ RunSummary run_simulation(const CliOptions& options) {
     const std::size_t task_count = run_metrics.tasks.size();
     const double throughput = compute_throughput_per_second(task_count, makespan);
 
-    write_report(options, profile, workload_doc, run_metrics, start_time, finish_time, makespan, scheduler.events_processed());
+    write_report(options,
+                 profile,
+                 workload_doc,
+                 run_metrics,
+                 rolling_metrics,
+                 start_time,
+                 finish_time,
+                 makespan,
+                 scheduler.events_processed());
 
     return RunSummary{
         .completed_tasks = task_count,
         .makespan_us = makespan,
         .throughput_per_sec = throughput,
         .metrics = run_metrics,
+        .rolling_metrics = rolling_metrics,
     };
 }
 
@@ -985,7 +1028,8 @@ namespace {
 void write_batch_csv_header(std::ofstream& out, const std::vector<std::string>& metadata_keys) {
     out << "run_name,profile,workload,policy,seed,host_mode,nic_mode,completed_tasks,makespan_us,"
            "throughput_per_sec,mean_latency_us,p95_latency_us,p99_latency_us,peak_waiting_queue_depth,"
-           "waiting_reorders,waiting_reorders_per_task,output_path";
+           "waiting_reorders,waiting_reorders_per_task,waiting_reorders_recent,waiting_reorder_recent_task_count,"
+           "waiting_reorders_per_task_recent,output_path";
     for (const auto& key : metadata_keys) {
         out << "," << key;
     }
@@ -998,10 +1042,8 @@ void append_batch_csv_row(std::ofstream& out,
     const auto& aggregate = result.summary.metrics.aggregate;
     const auto& policy_metrics = result.summary.metrics.policy;
     const auto& latency = aggregate.latency_stats;
-    const double waiting_ratio =
-        result.summary.completed_tasks > 0
-            ? static_cast<double>(policy_metrics.waiting_reorders) / static_cast<double>(result.summary.completed_tasks)
-            : 0.0;
+    const double waiting_ratio = policy_metrics.waiting_reorders_per_task;
+    const double waiting_ratio_recent = policy_metrics.waiting_reorders_per_task_recent;
     out << result.name << ","
         << result.options.profile_path.string() << ","
         << result.options.workload_path.string() << ","
@@ -1018,6 +1060,9 @@ void append_batch_csv_row(std::ofstream& out,
         << aggregate.peak_waiting_queue_depth << ","
         << policy_metrics.waiting_reorders << ","
         << format_double(waiting_ratio) << ","
+        << policy_metrics.waiting_reorders_recent << ","
+        << policy_metrics.waiting_reorder_recent_task_count << ","
+        << format_double(waiting_ratio_recent) << ","
         << result.options.output_path.string();
     for (const auto& key : metadata_keys) {
         auto it = result.metadata.find(key);

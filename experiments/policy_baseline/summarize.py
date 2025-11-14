@@ -34,6 +34,9 @@ NUMERIC_METRICS = [
 PEAK_FIELD = ("peak_q", "peak_waiting_queue_depth")
 WAITING_FIELD = ("reorders", "waiting_reorders")
 RATIO_FIELD = ("reorders_per_task", "waiting_reorders_per_task")
+RECENT_WAITING_FIELD = ("reorders_recent", "waiting_reorders_recent")
+RECENT_RATIO_FIELD = ("reorders_per_task_recent", "waiting_reorders_per_task_recent")
+RECENT_WINDOW_FIELD = ("recent_window", "waiting_reorder_recent_task_count")
 DEFAULT_METADATA_COLUMNS = ["arrival_label", "background_load", "zipf_alpha"]
 
 
@@ -46,6 +49,17 @@ def compute_reorder_ratio(row: Dict[str, str]) -> float:
     waiting = float(row.get(WAITING_FIELD[1], 0.0) or 0.0)
     completed = float(row.get("completed_tasks", 0.0) or 0.0)
     return waiting / completed if completed > 0.0 else 0.0
+
+
+def compute_recent_reorder_ratio(row: Dict[str, str]) -> float:
+    if ratio := row.get(RECENT_RATIO_FIELD[1]):
+        try:
+            return float(ratio)
+        except ValueError:
+            return 0.0
+    waiting_recent = float(row.get(RECENT_WAITING_FIELD[1], 0.0) or 0.0)
+    window = float(row.get(RECENT_WINDOW_FIELD[1], 0.0) or 0.0)
+    return waiting_recent / window if window > 0.0 else 0.0
 
 def load_rows(csv_path: pathlib.Path) -> List[Dict[str, str]]:
     if not csv_path.exists():
@@ -67,7 +81,7 @@ def apply_filters(rows: List[Dict[str, str]], filters: List[Tuple[str, str]]) ->
 
 def format_table(rows: List[Dict[str, str]], extra_columns: List[str]) -> str:
     headers = ["run_name", "policy"] + [label for label, _ in NUMERIC_METRICS]
-    headers += [PEAK_FIELD[0], WAITING_FIELD[0], RATIO_FIELD[0]]
+    headers += [PEAK_FIELD[0], WAITING_FIELD[0], RATIO_FIELD[0], RECENT_WAITING_FIELD[0], RECENT_RATIO_FIELD[0], RECENT_WINDOW_FIELD[0]]
     headers += extra_columns
     formatted = []
     for row in rows:
@@ -80,6 +94,9 @@ def format_table(rows: List[Dict[str, str]], extra_columns: List[str]) -> str:
             entry[label] = f"{float(row[field]):.2f}"
         entry[WAITING_FIELD[0]] = row.get(WAITING_FIELD[1], "")
         entry[RATIO_FIELD[0]] = f"{compute_reorder_ratio(row):.4f}"
+        entry[RECENT_WAITING_FIELD[0]] = row.get(RECENT_WAITING_FIELD[1], "")
+        entry[RECENT_RATIO_FIELD[0]] = f"{compute_recent_reorder_ratio(row):.4f}"
+        entry[RECENT_WINDOW_FIELD[0]] = row.get(RECENT_WINDOW_FIELD[1], "")
 
         for column in extra_columns:
             entry[column] = row.get(column, "")
@@ -101,7 +118,7 @@ def format_grouped_table(rows: List[Dict[str, str]],
     headers = (
         [group_by, "count"]
         + [label for label, _ in NUMERIC_METRICS]
-        + [PEAK_FIELD[0], WAITING_FIELD[0], RATIO_FIELD[0]]
+        + [PEAK_FIELD[0], WAITING_FIELD[0], RATIO_FIELD[0], RECENT_WAITING_FIELD[0], RECENT_RATIO_FIELD[0], RECENT_WINDOW_FIELD[0]]
         + extra_columns
     )
     widths = {h: len(h) for h in headers}
@@ -121,6 +138,9 @@ def format_grouped_table(rows: List[Dict[str, str]],
         formatted_row[PEAK_FIELD[0]] = f"{row[PEAK_FIELD[0]]:.2f}"
         formatted_row[WAITING_FIELD[0]] = f"{row[WAITING_FIELD[0]]:.2f}"
         formatted_row[RATIO_FIELD[0]] = f"{row[RATIO_FIELD[0]]:.4f}"
+        formatted_row[RECENT_WAITING_FIELD[0]] = f"{row[RECENT_WAITING_FIELD[0]]:.2f}"
+        formatted_row[RECENT_RATIO_FIELD[0]] = f"{row[RECENT_RATIO_FIELD[0]]:.4f}"
+        formatted_row[RECENT_WINDOW_FIELD[0]] = f"{row[RECENT_WINDOW_FIELD[0]]:.2f}"
         for column in extra_columns:
             formatted_row[column] = row.get(column, "")
         for key, value in formatted_row.items():
@@ -150,6 +170,12 @@ def aggregate_rows(rows: List[Dict[str, str]],
         total_tasks = sum(float(entry.get("completed_tasks", 0.0) or 0.0) for entry in entries)
         total_reorders = sum(waiting_values)
         aggregate[RATIO_FIELD[0]] = total_reorders / total_tasks if total_tasks > 0.0 else 0.0
+        recent_waiting_values = [float(entry.get(RECENT_WAITING_FIELD[1], 0.0) or 0.0) for entry in entries]
+        aggregate[RECENT_WAITING_FIELD[0]] = sum(recent_waiting_values) / len(entries) if entries else 0.0
+        total_recent_tasks = sum(float(entry.get(RECENT_WINDOW_FIELD[1], 0.0) or 0.0) for entry in entries)
+        total_recent_reorders = sum(recent_waiting_values)
+        aggregate[RECENT_RATIO_FIELD[0]] = total_recent_reorders / total_recent_tasks if total_recent_tasks > 0.0 else 0.0
+        aggregate[RECENT_WINDOW_FIELD[0]] = total_recent_tasks / len(entries) if entries else 0.0
         for column in extra_columns:
             values = {entry.get(column, "") for entry in entries if entry.get(column, "")}
             if not values:
