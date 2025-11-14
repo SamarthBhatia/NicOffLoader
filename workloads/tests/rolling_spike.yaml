@@ -1,0 +1,33 @@
+schema_version: 0.1
+workload_name: rolling_spike
+description: >
+  Deterministic host-saturation burst used to validate the rolling queue/utilization metrics.
+tasks:
+  - id: 301
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 40.0
+        demands:
+          - resource: host_cpu
+            units: 32
+  - id: 302
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 40.0
+        demands:
+          - resource: host_cpu
+            units: 32
+  - id: 303
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 40.0
+        demands:
+          - resource: host_cpu
+            units: 32
+  - id: 304
+    arrival_time: 80.0
+    stages:
+      - deterministic_service_time: 20.0
+        demands:
+          - resource: host_cpu
+            units: 32

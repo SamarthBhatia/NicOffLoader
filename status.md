@@ -28,9 +28,9 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 4 — Observability + state API
 - **Focus:** Expose runtime metrics for policies.
-- **Done:** Landed a reusable rolling-metrics collector (`RollingRuntimeMetrics`) that samples waiting-queue depth, host/NIC utilization, and per-task sojourn stats over sliding windows; threaded it through the scheduler so every policy snapshot and CLI run summary now carries the new `PolicyRollingMetrics`; surfaced the rolling section inside the CLI JSON output; and added both a focused unit test and the existing CLI report regression to lock the behavior down.
-- **Next:** Thread the rolling stats into the batch CSV/normalized exports (and plots) plus surface them inside the TUI so policies and humans can inspect utilization/queue windows without parsing JSON manually.
-- **Remaining:** Implement deterministic test showing utilization shift after synthetic spike.
+- **Done:** Landed a reusable rolling-metrics collector (`RollingRuntimeMetrics`) that samples waiting-queue depth, host/NIC utilization, and per-task sojourn stats over sliding windows; threaded it through the scheduler so every policy snapshot and CLI run summary now carries the new `PolicyRollingMetrics`; surfaced the rolling section inside the CLI JSON output; added both a focused unit test and the existing CLI report regression to lock the behavior down; extended the batch CSV/normalized exports/summary tooling/notebooks/plots with the new `rolling_*` columns (including a queue+utilization subplot); exposed the live stats in the ncurses TUI plus the saved metrics dumps; added CLI/manifest knobs for the rolling windows; introduced the adaptive builtin policy so hooks can react to rolling utilization; and delivered the deterministic `rolling_spike` workload + `rolling_metrics_spike_test` so CI verifies the rolling queue/utilization/sojourn windows when host resources saturate.
+- **Next:** Bubble the rolling metrics (and window knobs) into the upcoming DSL/runtime layer so policy scripts can read/write them without going through the builtin hooks, and add a complementary NIC-centric spike to prove the adaptive heuristics swing both ways.
+- **Remaining:** Expand coverage to NIC-focused spikes + policy-driven heuristics once rolling stats feed into DSL hooks.
 
 ## Phase 5 — Policy engine + mini-DSL MVP
 - **Focus:** Parser, runtime, stock policies.

@@ -27,6 +27,9 @@ struct CliOptions {
     bool batch_mode{false};
     std::filesystem::path batch_manifest_path;
     std::map<std::string, std::string> metadata;
+    double rolling_queue_window_us{BasicScheduler::kRollingQueueWindowUs};
+    double rolling_util_window_us{BasicScheduler::kRollingUtilizationWindowUs};
+    std::size_t rolling_sojourn_window_tasks{BasicScheduler::kRollingSojournWindowTasks};
 };
 
 struct RunSummary {

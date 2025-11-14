@@ -37,6 +37,14 @@ RATIO_FIELD = ("reorders_per_task", "waiting_reorders_per_task")
 RECENT_WAITING_FIELD = ("reorders_recent", "waiting_reorders_recent")
 RECENT_RATIO_FIELD = ("reorders_per_task_recent", "waiting_reorders_per_task_recent")
 RECENT_WINDOW_FIELD = ("recent_window", "waiting_reorder_recent_task_count")
+ROLLING_COLUMNS = [
+    ("queue_avg", "rolling_queue_average"),
+    ("queue_peak", "rolling_queue_peak"),
+    ("host_util_avg", "rolling_host_util_average"),
+    ("nic_util_avg", "rolling_nic_util_average"),
+    ("sojourn_p95", "rolling_sojourn_p95_latency_us"),
+    ("sojourn_p99", "rolling_sojourn_p99_latency_us"),
+]
 DEFAULT_METADATA_COLUMNS = ["arrival_label", "background_load", "zipf_alpha"]
 
 
@@ -61,6 +69,27 @@ def compute_recent_reorder_ratio(row: Dict[str, str]) -> float:
     window = float(row.get(RECENT_WINDOW_FIELD[1], 0.0) or 0.0)
     return waiting_recent / window if window > 0.0 else 0.0
 
+
+def get_float(row: Dict[str, str], field: str) -> float | None:
+    value = row.get(field)
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def coerce_float(value: object, default: float = 0.0) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if value in (None, ""):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
 def load_rows(csv_path: pathlib.Path) -> List[Dict[str, str]]:
     if not csv_path.exists():
         raise SystemExit(f"CSV not found: {csv_path}")
@@ -82,6 +111,7 @@ def apply_filters(rows: List[Dict[str, str]], filters: List[Tuple[str, str]]) ->
 def format_table(rows: List[Dict[str, str]], extra_columns: List[str]) -> str:
     headers = ["run_name", "policy"] + [label for label, _ in NUMERIC_METRICS]
     headers += [PEAK_FIELD[0], WAITING_FIELD[0], RATIO_FIELD[0], RECENT_WAITING_FIELD[0], RECENT_RATIO_FIELD[0], RECENT_WINDOW_FIELD[0]]
+    headers += [label for label, _ in ROLLING_COLUMNS]
     headers += extra_columns
     formatted = []
     for row in rows:
@@ -97,6 +127,9 @@ def format_table(rows: List[Dict[str, str]], extra_columns: List[str]) -> str:
         entry[RECENT_WAITING_FIELD[0]] = row.get(RECENT_WAITING_FIELD[1], "")
         entry[RECENT_RATIO_FIELD[0]] = f"{compute_recent_reorder_ratio(row):.4f}"
         entry[RECENT_WINDOW_FIELD[0]] = row.get(RECENT_WINDOW_FIELD[1], "")
+        for label, field in ROLLING_COLUMNS:
+            value = get_float(row, field)
+            entry[label] = f"{value:.3f}" if value is not None else ""
 
         for column in extra_columns:
             entry[column] = row.get(column, "")
@@ -119,6 +152,7 @@ def format_grouped_table(rows: List[Dict[str, str]],
         [group_by, "count"]
         + [label for label, _ in NUMERIC_METRICS]
         + [PEAK_FIELD[0], WAITING_FIELD[0], RATIO_FIELD[0], RECENT_WAITING_FIELD[0], RECENT_RATIO_FIELD[0], RECENT_WINDOW_FIELD[0]]
+        + [label for label, _ in ROLLING_COLUMNS]
         + extra_columns
     )
     widths = {h: len(h) for h in headers}
@@ -141,6 +175,9 @@ def format_grouped_table(rows: List[Dict[str, str]],
         formatted_row[RECENT_WAITING_FIELD[0]] = f"{row[RECENT_WAITING_FIELD[0]]:.2f}"
         formatted_row[RECENT_RATIO_FIELD[0]] = f"{row[RECENT_RATIO_FIELD[0]]:.4f}"
         formatted_row[RECENT_WINDOW_FIELD[0]] = f"{row[RECENT_WINDOW_FIELD[0]]:.2f}"
+        for label, field in ROLLING_COLUMNS:
+            value = coerce_float(row.get(field))
+            formatted_row[label] = f"{value:.3f}"
         for column in extra_columns:
             formatted_row[column] = row.get(column, "")
         for key, value in formatted_row.items():
@@ -176,6 +213,9 @@ def aggregate_rows(rows: List[Dict[str, str]],
         total_recent_reorders = sum(recent_waiting_values)
         aggregate[RECENT_RATIO_FIELD[0]] = total_recent_reorders / total_recent_tasks if total_recent_tasks > 0.0 else 0.0
         aggregate[RECENT_WINDOW_FIELD[0]] = total_recent_tasks / len(entries) if entries else 0.0
+        for _, field in ROLLING_COLUMNS:
+            values = [float(entry.get(field, 0.0) or 0.0) for entry in entries]
+            aggregate[field] = sum(values) / len(entries) if entries else 0.0
         for column in extra_columns:
             values = {entry.get(column, "") for entry in entries if entry.get(column, "")}
             if not values:

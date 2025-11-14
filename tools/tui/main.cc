@@ -301,6 +301,20 @@ struct SimulationSnapshot {
     std::size_t policy_waiting_reorders_recent{0};
     std::size_t policy_waiting_reorder_recent_task_count{0};
     double policy_waiting_reorders_per_task_recent{0.0};
+    std::size_t rolling_queue_samples{0};
+    double rolling_queue_latest{0.0};
+    double rolling_queue_average{0.0};
+    double rolling_queue_peak{0.0};
+    std::size_t rolling_host_util_samples{0};
+    double rolling_host_util_average{0.0};
+    double rolling_host_util_peak{0.0};
+    std::size_t rolling_nic_util_samples{0};
+    double rolling_nic_util_average{0.0};
+    double rolling_nic_util_peak{0.0};
+    std::size_t rolling_sojourn_samples{0};
+    double rolling_sojourn_mean_latency{0.0};
+    double rolling_sojourn_p95{0.0};
+    double rolling_sojourn_p99{0.0};
 };
 
 class SimulationSession {
@@ -386,6 +400,21 @@ class SimulationSession {
                 policy_snapshot.run_metrics.policy.waiting_reorder_recent_task_count;
             snapshot.policy_waiting_reorders_per_task_recent =
                 policy_snapshot.run_metrics.policy.waiting_reorders_per_task_recent;
+            const auto& rolling = policy_snapshot.rolling_metrics;
+            snapshot.rolling_queue_samples = rolling.waiting_queue_depth.samples;
+            snapshot.rolling_queue_latest = rolling.waiting_queue_depth.latest;
+            snapshot.rolling_queue_average = rolling.waiting_queue_depth.average;
+            snapshot.rolling_queue_peak = rolling.waiting_queue_depth.peak;
+            snapshot.rolling_host_util_samples = rolling.host_utilization.samples;
+            snapshot.rolling_host_util_average = rolling.host_utilization.average;
+            snapshot.rolling_host_util_peak = rolling.host_utilization.peak;
+            snapshot.rolling_nic_util_samples = rolling.nic_utilization.samples;
+            snapshot.rolling_nic_util_average = rolling.nic_utilization.average;
+            snapshot.rolling_nic_util_peak = rolling.nic_utilization.peak;
+            snapshot.rolling_sojourn_samples = rolling.sojourn.samples;
+            snapshot.rolling_sojourn_mean_latency = rolling.sojourn.mean_latency;
+            snapshot.rolling_sojourn_p95 = rolling.sojourn.p95_latency;
+            snapshot.rolling_sojourn_p99 = rolling.sojourn.p99_latency;
         } else {
             snapshot.finished = true;
         }
@@ -671,6 +700,30 @@ bool write_metrics_report(const SimulationSession& session,
     out << "    \"waiting_reorders\": " << run_metrics.policy.waiting_reorders << ",\n";
     out << "    \"waiting_reorders_per_task\": " << format_double(run_metrics.policy.waiting_reorders_per_task, 6) << "\n";
     out << "  },\n";
+    out << "  \"rolling_metrics\": {\n";
+    out << "    \"queue\": {\n";
+    out << "      \"samples\": " << snapshot.rolling_queue_samples << ",\n";
+    out << "      \"latest\": " << format_double(snapshot.rolling_queue_latest, 6) << ",\n";
+    out << "      \"average\": " << format_double(snapshot.rolling_queue_average, 6) << ",\n";
+    out << "      \"peak\": " << format_double(snapshot.rolling_queue_peak, 6) << "\n";
+    out << "    },\n";
+    out << "    \"host_util\": {\n";
+    out << "      \"samples\": " << snapshot.rolling_host_util_samples << ",\n";
+    out << "      \"average\": " << format_double(snapshot.rolling_host_util_average, 6) << ",\n";
+    out << "      \"peak\": " << format_double(snapshot.rolling_host_util_peak, 6) << "\n";
+    out << "    },\n";
+    out << "    \"nic_util\": {\n";
+    out << "      \"samples\": " << snapshot.rolling_nic_util_samples << ",\n";
+    out << "      \"average\": " << format_double(snapshot.rolling_nic_util_average, 6) << ",\n";
+    out << "      \"peak\": " << format_double(snapshot.rolling_nic_util_peak, 6) << "\n";
+    out << "    },\n";
+    out << "    \"sojourn\": {\n";
+    out << "      \"samples\": " << snapshot.rolling_sojourn_samples << ",\n";
+    out << "      \"mean_us\": " << format_double(snapshot.rolling_sojourn_mean_latency, 6) << ",\n";
+    out << "      \"p95_us\": " << format_double(snapshot.rolling_sojourn_p95, 6) << ",\n";
+    out << "      \"p99_us\": " << format_double(snapshot.rolling_sojourn_p99, 6) << "\n";
+    out << "    }\n";
+    out << "  },\n";
 
     out << "  \"tasks\": [\n";
     const auto& task_timings = run_metrics.tasks;
@@ -834,6 +887,20 @@ void draw_right_panel(WINDOW* win, const AppState& state, const SimulationSnapsh
     if (snapshot.policy_waiting_reorder_recent_task_count > 0) {
         print_line("    Recent (" + std::to_string(snapshot.policy_waiting_reorder_recent_task_count) +
                    " tasks): " + format_double(snapshot.policy_waiting_reorders_per_task_recent, 4));
+    }
+    if (snapshot.rolling_queue_samples > 0) {
+        print_line("  Rolling queue avg: " + format_double(snapshot.rolling_queue_average, 3) + " (peak " +
+                   format_double(snapshot.rolling_queue_peak, 3) + ", latest " +
+                   format_double(snapshot.rolling_queue_latest, 3) + ")");
+    }
+    if (snapshot.rolling_host_util_samples > 0) {
+        print_line("  Rolling util avg (host/nic): " + format_double(snapshot.rolling_host_util_average, 3) + " / " +
+                   format_double(snapshot.rolling_nic_util_average, 3));
+    }
+    if (snapshot.rolling_sojourn_samples > 0) {
+        print_line("  Rolling sojourn mean/p95/p99 (us): " + format_double(snapshot.rolling_sojourn_mean_latency, 3) +
+                   " / " + format_double(snapshot.rolling_sojourn_p95, 3) + " / " +
+                   format_double(snapshot.rolling_sojourn_p99, 3));
     }
 
     if (!state.status_message.empty()) {

@@ -41,6 +41,15 @@ def load_metrics(csv_path: pathlib.Path) -> List[Tuple[str, Metrics]]:
                     "waiting_reorders_recent": float(row.get("waiting_reorders_recent", 0.0) or 0.0),
                     "waiting_ratio_recent": float(row.get("waiting_reorders_per_task_recent", 0.0) or 0.0),
                     "waiting_recent_window": float(row.get("waiting_reorder_recent_task_count", 0.0) or 0.0),
+                    "rolling_queue_avg": float(row.get("rolling_queue_average", 0.0) or 0.0),
+                    "rolling_queue_peak": float(row.get("rolling_queue_peak", 0.0) or 0.0),
+                    "rolling_host_util_avg": float(row.get("rolling_host_util_average", 0.0) or 0.0),
+                    "rolling_host_util_peak": float(row.get("rolling_host_util_peak", 0.0) or 0.0),
+                    "rolling_nic_util_avg": float(row.get("rolling_nic_util_average", 0.0) or 0.0),
+                    "rolling_nic_util_peak": float(row.get("rolling_nic_util_peak", 0.0) or 0.0),
+                    "rolling_sojourn_mean": float(row.get("rolling_sojourn_mean_latency_us", 0.0) or 0.0),
+                    "rolling_sojourn_p95": float(row.get("rolling_sojourn_p95_latency_us", 0.0) or 0.0),
+                    "rolling_sojourn_p99": float(row.get("rolling_sojourn_p99_latency_us", 0.0) or 0.0),
                 }
             )
 
@@ -59,6 +68,15 @@ def load_metrics(csv_path: pathlib.Path) -> List[Tuple[str, Metrics]]:
             "waiting_reorders_recent",
             "waiting_ratio_recent",
             "waiting_recent_window",
+            "rolling_queue_avg",
+            "rolling_queue_peak",
+            "rolling_host_util_avg",
+            "rolling_host_util_peak",
+            "rolling_nic_util_avg",
+            "rolling_nic_util_peak",
+            "rolling_sojourn_mean",
+            "rolling_sojourn_p95",
+            "rolling_sojourn_p99",
         ]:
             summary[metric] = sum(entry[metric] for entry in entries) / count
         summaries.append((name, summary))
@@ -91,12 +109,19 @@ def plot(results: List[Tuple[str, Metrics]], output_path: pathlib.Path) -> None:
     waiting_ratio_total = [metrics["waiting_ratio_total"] for _, metrics in results]
     waiting_ratio_recent = [metrics["waiting_ratio_recent"] for _, metrics in results]
     waiting_recent_window = [metrics["waiting_recent_window"] for _, metrics in results]
+    rolling_queue_avg = [metrics["rolling_queue_avg"] for _, metrics in results]
+    rolling_queue_peak = [metrics["rolling_queue_peak"] for _, metrics in results]
+    host_util_avg = [metrics["rolling_host_util_avg"] for _, metrics in results]
+    nic_util_avg = [metrics["rolling_nic_util_avg"] for _, metrics in results]
+    sojourn_mean = [metrics["rolling_sojourn_mean"] for _, metrics in results]
+    sojourn_p95 = [metrics["rolling_sojourn_p95"] for _, metrics in results]
+    sojourn_p99 = [metrics["rolling_sojourn_p99"] for _, metrics in results]
 
     x = range(len(names))
     width = 0.35
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
-    throughput_axis, latency_axis, reorder_axis = axes
+    fig, axes = plt.subplots(2, 2, figsize=(16, 8))
+    throughput_axis, latency_axis, reorder_axis, queue_axis = axes.flatten()
 
     throughput_bars = throughput_axis.bar(x, throughput, color="#4c72b0")
     throughput_axis.set_xticks(x)
@@ -169,6 +194,41 @@ def plot(results: List[Tuple[str, Metrics]], output_path: pathlib.Path) -> None:
             ha="center",
             va="bottom",
             fontsize=8,
+        )
+
+    max_queue_height = max(rolling_queue_peak + [1.0])
+    queue_bars = queue_axis.bar(x, rolling_queue_avg, color="#ccb974", label="waiting queue avg")
+    queue_axis.set_xticks(x)
+    queue_axis.set_xticklabels(names, rotation=20, ha="right")
+    queue_axis.set_ylabel("waiting queue (tasks)")
+    queue_axis.set_title("Rolling queue depth & utilization")
+    queue_axis.grid(axis="y", linestyle="--", alpha=0.4)
+    for bar, peak in zip(queue_bars, rolling_queue_peak):
+        queue_axis.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            bar.get_height(),
+            f"peak {peak:.1f}",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
+    util_axis = queue_axis.twinx()
+    util_axis.plot(x, host_util_avg, marker="o", color="#64b5cd", label="host util avg")
+    util_axis.plot(x, nic_util_avg, marker="s", color="#dd8452", label="nic util avg")
+    util_axis.set_ylabel("utilization (0–1)")
+    util_axis.set_ylim(0.0, 1.05)
+    handles, labels = queue_axis.get_legend_handles_labels()
+    handles2, labels2 = util_axis.get_legend_handles_labels()
+    queue_axis.legend(handles + handles2, labels + labels2, loc="upper left", fontsize=8)
+    for pos, mean, p95, p99 in zip(x, sojourn_mean, sojourn_p95, sojourn_p99):
+        queue_axis.text(
+            pos,
+            max_queue_height * 1.02,
+            f"soj μ={mean:.1f} p95={p95:.1f} p99={p99:.1f}us",
+            ha="center",
+            va="bottom",
+            fontsize=7,
+            rotation=30,
         )
 
     fig.suptitle("Policy baseline comparison")

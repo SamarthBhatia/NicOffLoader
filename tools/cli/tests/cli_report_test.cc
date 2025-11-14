@@ -56,12 +56,16 @@ int main() {
     options.seed = 1;
     options.host_mode = nicloadoff::ServiceTimeMode::kDeterministic;
     options.nic_mode = nicloadoff::ServiceTimeMode::kDeterministic;
+    options.rolling_queue_window_us = 5.0;
+    options.rolling_util_window_us = 5.0;
+    options.rolling_sojourn_window_tasks = 1;
 
     const RunSummary summary = run_simulation(options);
     check(summary.completed_tasks == 2, "expected two completed tasks");
     check(summary.metrics.aggregate.latency_stats.count == 2, "expected two latency samples");
     check(summary.metrics.tasks.size() == 2, "expected two task metric entries");
     check(summary.rolling_metrics.waiting_queue_depth.samples > 0, "expected rolling metrics to record queue depth");
+    check(summary.rolling_metrics.sojourn.samples == 1, "expected rolling sojourn window override to apply");
 
     std::ifstream input(options.output_path);
     check(static_cast<bool>(input), "expected report file to open");
@@ -112,6 +116,9 @@ int main() {
         manifest << "output: " << manifest_output.string() << "\n";
         manifest << "policy: prefer-nic\n";
         manifest << "seed: 7\n";
+        manifest << "rolling_queue_window_us: 120000\n";
+        manifest << "rolling_util_window_us: 90000\n";
+        manifest << "rolling_sojourn_window_tasks: 2\n";
         manifest << "service_modes:\n";
         manifest << "  host: deterministic\n";
         manifest << "  nic: stochastic\n";
@@ -138,6 +145,8 @@ int main() {
     check(manifest_options.seed == 7, "manifest should set seed");
     check(manifest_options.nic_mode == nicloadoff::ServiceTimeMode::kStochastic,
           "manifest should set NIC service mode");
+    check(manifest_options.rolling_queue_window_us == 120000.0, "manifest should set rolling queue window");
+    check(manifest_options.rolling_sojourn_window_tasks == 2, "manifest should set rolling sojourn window");
 
     const RunSummary manifest_summary = run_simulation(manifest_options);
     check(manifest_summary.completed_tasks == summary.completed_tasks,
@@ -176,6 +185,7 @@ int main() {
     std::string batch_csv_content((std::istreambuf_iterator<char>(batch_csv_in)), std::istreambuf_iterator<char>());
     assert_contains(batch_csv_content, "prefer-host", "batch csv missing first run");
     assert_contains(batch_csv_content, "prefer-nic", "batch csv missing second run");
+    assert_contains(batch_csv_content, "rolling_queue_average", "batch csv missing rolling metrics column");
 
     for (const auto& run : batch_results) {
         check(std::filesystem::exists(run.options.output_path), "expected batch output json");

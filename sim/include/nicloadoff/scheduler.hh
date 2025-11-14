@@ -34,6 +34,12 @@ class BasicScheduler {
     static constexpr Duration kRollingUtilizationWindowUs = 50'000.0;
     static constexpr std::size_t kRollingSojournWindowTasks = 128;
 
+    struct RollingWindowConfig {
+        Duration queue_window_us{kRollingQueueWindowUs};
+        Duration utilization_window_us{kRollingUtilizationWindowUs};
+        std::size_t sojourn_window_tasks{kRollingSojournWindowTasks};
+    };
+
     struct TaskStatus {
         TaskId id{};
         std::size_t stage_index{0};
@@ -52,6 +58,9 @@ class BasicScheduler {
     };
 
     explicit BasicScheduler(ResourcePool resources, ServiceTimeModel* service_model = nullptr);
+    BasicScheduler(ResourcePool resources,
+                   ServiceTimeModel* service_model,
+                   RollingWindowConfig rolling_config);
 
     void submit_task(const Task& task);
     void run_until_empty();
@@ -142,6 +151,7 @@ class BasicScheduler {
         double in_use{0.0};
     };
 
+    RollingWindowConfig rolling_config_;
     RollingRuntimeMetrics rolling_metrics_;
     DomainUsage host_usage_;
     DomainUsage nic_usage_;

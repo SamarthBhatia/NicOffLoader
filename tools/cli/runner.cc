@@ -141,6 +141,11 @@ struct BatchDefaults {
     std::optional<ServiceTimeMode> host_mode;
     std::optional<ServiceTimeMode> nic_mode;
     std::map<std::string, std::string> metadata;
+    struct RollingOverrides {
+        std::optional<double> queue_window_us;
+        std::optional<double> util_window_us;
+        std::optional<std::size_t> sojourn_window_tasks;
+    } rolling_windows;
 };
 
 struct BatchRunConfig {
@@ -266,6 +271,53 @@ std::map<std::string, std::string> parse_metadata_map(const YAML::Node& node, co
     return metadata;
 }
 
+BatchDefaults::RollingOverrides parse_rolling_windows(const YAML::Node& node, const std::string& context) {
+    BatchDefaults::RollingOverrides overrides;
+    if (!node) {
+        return overrides;
+    }
+    if (!node.IsMap()) {
+        std::ostringstream oss;
+        oss << context << " must be a mapping";
+        throw std::runtime_error(oss.str());
+    }
+    auto parse_positive_double = [&](const YAML::Node& value_node, const char* field) -> double {
+        if (!value_node.IsScalar()) {
+            std::ostringstream oss;
+            oss << context << "." << field << " must be numeric";
+            throw std::runtime_error(oss.str());
+        }
+        double value = value_node.as<double>();
+        if (value <= 0.0) {
+            std::ostringstream oss;
+            oss << context << "." << field << " must be > 0";
+            throw std::runtime_error(oss.str());
+        }
+        return value;
+    };
+    if (const YAML::Node queue = node["queue_us"]) {
+        overrides.queue_window_us = parse_positive_double(queue, "queue_us");
+    }
+    if (const YAML::Node util = node["util_us"]) {
+        overrides.util_window_us = parse_positive_double(util, "util_us");
+    }
+    if (const YAML::Node sojourn = node["sojourn_tasks"]) {
+        if (!sojourn.IsScalar()) {
+            std::ostringstream oss;
+            oss << context << ".sojourn_tasks must be numeric";
+            throw std::runtime_error(oss.str());
+        }
+        const std::size_t tasks = sojourn.as<std::size_t>();
+        if (tasks == 0) {
+            std::ostringstream oss;
+            oss << context << ".sojourn_tasks must be > 0";
+            throw std::runtime_error(oss.str());
+        }
+        overrides.sojourn_window_tasks = tasks;
+    }
+    return overrides;
+}
+
 BatchDefaults parse_batch_defaults(const YAML::Node& node,
                                    const std::filesystem::path& base_dir,
                                    std::set<std::string>& metadata_keys) {
@@ -320,6 +372,7 @@ BatchDefaults parse_batch_defaults(const YAML::Node& node,
             metadata_keys.insert(key);
         }
     }
+    defaults.rolling_windows = parse_rolling_windows(node["rolling_windows"], "defaults.rolling_windows");
     return defaults;
 }
 
@@ -331,6 +384,15 @@ CliOptions make_base_cli_options(const BatchDefaults& defaults) {
     options.nic_mode = defaults.nic_mode.value_or(options.nic_mode);
     if (defaults.policy_id) {
         options.policy_id = *defaults.policy_id;
+    }
+    if (defaults.rolling_windows.queue_window_us) {
+        options.rolling_queue_window_us = *defaults.rolling_windows.queue_window_us;
+    }
+    if (defaults.rolling_windows.util_window_us) {
+        options.rolling_util_window_us = *defaults.rolling_windows.util_window_us;
+    }
+    if (defaults.rolling_windows.sojourn_window_tasks) {
+        options.rolling_sojourn_window_tasks = *defaults.rolling_windows.sojourn_window_tasks;
     }
     options.batch_mode = false;
     options.batch_manifest_path.clear();
@@ -422,6 +484,18 @@ BatchRunConfig parse_batch_run(const YAML::Node& run_node,
     apply_service_modes_override(run_node["service_modes"], config.options,
                                  "batch run '" + config.name + "'");
 
+    const auto rolling_overrides = parse_rolling_windows(run_node["rolling_windows"],
+                                                         "batch run '" + config.name + "'.rolling_windows");
+    if (rolling_overrides.queue_window_us) {
+        config.options.rolling_queue_window_us = *rolling_overrides.queue_window_us;
+    }
+    if (rolling_overrides.util_window_us) {
+        config.options.rolling_util_window_us = *rolling_overrides.util_window_us;
+    }
+    if (rolling_overrides.sojourn_window_tasks) {
+        config.options.rolling_sojourn_window_tasks = *rolling_overrides.sojourn_window_tasks;
+    }
+
     std::map<std::string, std::string> metadata = defaults.metadata;
     if (const YAML::Node metadata_node = run_node["metadata"]) {
         auto override = parse_metadata_map(metadata_node, "batch run '" + config.name + "'");
@@ -506,6 +580,9 @@ struct ManifestOptions {
     std::optional<ServiceTimeMode> host_mode;
     std::optional<ServiceTimeMode> nic_mode;
     std::optional<std::string> policy_id;
+    std::optional<double> rolling_queue_window_us;
+    std::optional<double> rolling_util_window_us;
+    std::optional<std::size_t> rolling_sojourn_window_tasks;
 };
 
 bool parse_manifest_file(const std::filesystem::path& manifest_path,
@@ -627,6 +704,54 @@ bool parse_manifest_file(const std::filesystem::path& manifest_path,
                 std::ostringstream oss;
                 oss << "manifest field 'seed' must be an unsigned integer (line " << line_number << ")";
                 error = oss.str();
+                return false;
+            }
+        } else if (key == "rolling_queue_window_us") {
+            if (value.empty()) {
+                error = "manifest field 'rolling_queue_window_us' requires a value";
+                return false;
+            }
+            try {
+                double parsed = std::stod(value);
+                if (parsed <= 0.0) {
+                    error = "manifest field 'rolling_queue_window_us' must be > 0";
+                    return false;
+                }
+                manifest.rolling_queue_window_us = parsed;
+            } catch (const std::exception&) {
+                error = "manifest field 'rolling_queue_window_us' must be numeric";
+                return false;
+            }
+        } else if (key == "rolling_util_window_us") {
+            if (value.empty()) {
+                error = "manifest field 'rolling_util_window_us' requires a value";
+                return false;
+            }
+            try {
+                double parsed = std::stod(value);
+                if (parsed <= 0.0) {
+                    error = "manifest field 'rolling_util_window_us' must be > 0";
+                    return false;
+                }
+                manifest.rolling_util_window_us = parsed;
+            } catch (const std::exception&) {
+                error = "manifest field 'rolling_util_window_us' must be numeric";
+                return false;
+            }
+        } else if (key == "rolling_sojourn_window_tasks") {
+            if (value.empty()) {
+                error = "manifest field 'rolling_sojourn_window_tasks' requires a value";
+                return false;
+            }
+            try {
+                std::size_t parsed = static_cast<std::size_t>(std::stoull(value));
+                if (parsed == 0) {
+                    error = "manifest field 'rolling_sojourn_window_tasks' must be > 0";
+                    return false;
+                }
+                manifest.rolling_sojourn_window_tasks = parsed;
+            } catch (const std::exception&) {
+                error = "manifest field 'rolling_sojourn_window_tasks' must be numeric";
                 return false;
             }
         } else {
@@ -780,7 +905,13 @@ void print_usage(std::ostream& out) {
         << "  --seed <value>           RNG seed for stochastic service times (default: 1)\n"
         << "  --host-mode <mode>       Host service mode: deterministic|stochastic (default: deterministic)\n"
         << "  --nic-mode <mode>        NIC service mode: deterministic|stochastic (default: deterministic)\n"
-        << "  --policy <id>            Policy hook to register (options: none, descending-id, limit-active-1, prefer-host, prefer-nic)\n"
+        << "  --policy <id>            Policy hook to register (options: none, descending-id, limit-active-1, prefer-host, prefer-nic, prefer-adaptive)\n"
+        << "  --rolling-queue-window-us <value>    Horizon (microseconds) for rolling queue depth averaging (default "
+        << BasicScheduler::kRollingQueueWindowUs << ")\n"
+        << "  --rolling-util-window-us <value>     Horizon (microseconds) for rolling utilization averaging (default "
+        << BasicScheduler::kRollingUtilizationWindowUs << ")\n"
+        << "  --rolling-sojourn-window-tasks <N>   Number of recent tasks tracked in rolling sojourn stats (default "
+        << BasicScheduler::kRollingSojournWindowTasks << ")\n"
         << "  -h, --help               Show this message\n";
 }
 
@@ -793,6 +924,9 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
     bool nic_cli = false;
     bool policy_cli = false;
     bool manifest_cli = false;
+    bool rolling_queue_cli = false;
+    bool rolling_util_cli = false;
+    bool rolling_sojourn_cli = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -882,6 +1016,54 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
             }
             options.policy_id = std::move(value);
             policy_cli = true;
+        } else if (arg == "--rolling-queue-window-us") {
+            if (i + 1 >= argc) {
+                error = "--rolling-queue-window-us requires a numeric argument";
+                return false;
+            }
+            try {
+                options.rolling_queue_window_us = std::stod(argv[++i]);
+            } catch (const std::exception&) {
+                error = "invalid numeric value for --rolling-queue-window-us";
+                return false;
+            }
+            if (options.rolling_queue_window_us <= 0.0) {
+                error = "--rolling-queue-window-us must be > 0";
+                return false;
+            }
+            rolling_queue_cli = true;
+        } else if (arg == "--rolling-util-window-us") {
+            if (i + 1 >= argc) {
+                error = "--rolling-util-window-us requires a numeric argument";
+                return false;
+            }
+            try {
+                options.rolling_util_window_us = std::stod(argv[++i]);
+            } catch (const std::exception&) {
+                error = "invalid numeric value for --rolling-util-window-us";
+                return false;
+            }
+            if (options.rolling_util_window_us <= 0.0) {
+                error = "--rolling-util-window-us must be > 0";
+                return false;
+            }
+            rolling_util_cli = true;
+        } else if (arg == "--rolling-sojourn-window-tasks") {
+            if (i + 1 >= argc) {
+                error = "--rolling-sojourn-window-tasks requires a numeric argument";
+                return false;
+            }
+            try {
+                options.rolling_sojourn_window_tasks = std::stoull(argv[++i]);
+            } catch (const std::exception&) {
+                error = "invalid numeric value for --rolling-sojourn-window-tasks";
+                return false;
+            }
+            if (options.rolling_sojourn_window_tasks == 0) {
+                error = "--rolling-sojourn-window-tasks must be > 0";
+                return false;
+            }
+            rolling_sojourn_cli = true;
         } else if (arg == "--batch") {
             if (i + 1 >= argc) {
                 error = "--batch requires a path argument";
@@ -949,6 +1131,15 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
             }
             options.policy_id = *manifest_options.policy_id;
         }
+        if (!rolling_queue_cli && manifest_options.rolling_queue_window_us) {
+            options.rolling_queue_window_us = *manifest_options.rolling_queue_window_us;
+        }
+        if (!rolling_util_cli && manifest_options.rolling_util_window_us) {
+            options.rolling_util_window_us = *manifest_options.rolling_util_window_us;
+        }
+        if (!rolling_sojourn_cli && manifest_options.rolling_sojourn_window_tasks) {
+            options.rolling_sojourn_window_tasks = *manifest_options.rolling_sojourn_window_tasks;
+        }
     }
 
     if (options.profile_path.empty()) {
@@ -971,7 +1162,11 @@ RunSummary run_simulation(const CliOptions& options) {
     auto inventory = make_resource_inventory_from_profile(profile);
     DagSubmissionController dag_controller = DagSubmissionController::from_spec(workload, inventory.ids);
     const auto tasks = make_tasks_from_spec(workload, inventory.ids);
-    BasicScheduler scheduler(std::move(inventory.pool), &service_model);
+    BasicScheduler::RollingWindowConfig rolling_config;
+    rolling_config.queue_window_us = options.rolling_queue_window_us;
+    rolling_config.utilization_window_us = options.rolling_util_window_us;
+    rolling_config.sojourn_window_tasks = options.rolling_sojourn_window_tasks;
+    BasicScheduler scheduler(std::move(inventory.pool), &service_model, rolling_config);
     scheduler.set_policy_metadata(options.metadata);
 
     std::unique_ptr<policy::PolicyHook> policy_hook = policy::make_policy_hook(options.policy_id);
@@ -1029,7 +1224,12 @@ void write_batch_csv_header(std::ofstream& out, const std::vector<std::string>& 
     out << "run_name,profile,workload,policy,seed,host_mode,nic_mode,completed_tasks,makespan_us,"
            "throughput_per_sec,mean_latency_us,p95_latency_us,p99_latency_us,peak_waiting_queue_depth,"
            "waiting_reorders,waiting_reorders_per_task,waiting_reorders_recent,waiting_reorder_recent_task_count,"
-           "waiting_reorders_per_task_recent,output_path";
+           "waiting_reorders_per_task_recent,output_path,"
+           "rolling_queue_samples,rolling_queue_latest,rolling_queue_average,rolling_queue_peak,"
+           "rolling_host_util_samples,rolling_host_util_latest,rolling_host_util_average,rolling_host_util_peak,"
+           "rolling_nic_util_samples,rolling_nic_util_latest,rolling_nic_util_average,rolling_nic_util_peak,"
+           "rolling_sojourn_samples,rolling_sojourn_mean_queue_us,rolling_sojourn_mean_service_us,"
+           "rolling_sojourn_mean_latency_us,rolling_sojourn_p95_latency_us,rolling_sojourn_p99_latency_us";
     for (const auto& key : metadata_keys) {
         out << "," << key;
     }
@@ -1041,6 +1241,7 @@ void append_batch_csv_row(std::ofstream& out,
                           const std::vector<std::string>& metadata_keys) {
     const auto& aggregate = result.summary.metrics.aggregate;
     const auto& policy_metrics = result.summary.metrics.policy;
+    const auto& rolling = result.summary.rolling_metrics;
     const auto& latency = aggregate.latency_stats;
     const double waiting_ratio = policy_metrics.waiting_reorders_per_task;
     const double waiting_ratio_recent = policy_metrics.waiting_reorders_per_task_recent;
@@ -1063,7 +1264,25 @@ void append_batch_csv_row(std::ofstream& out,
         << policy_metrics.waiting_reorders_recent << ","
         << policy_metrics.waiting_reorder_recent_task_count << ","
         << format_double(waiting_ratio_recent) << ","
-        << result.options.output_path.string();
+        << result.options.output_path.string() << ","
+        << rolling.waiting_queue_depth.samples << ","
+        << format_double(rolling.waiting_queue_depth.latest) << ","
+        << format_double(rolling.waiting_queue_depth.average) << ","
+        << format_double(rolling.waiting_queue_depth.peak) << ","
+        << rolling.host_utilization.samples << ","
+        << format_double(rolling.host_utilization.latest) << ","
+        << format_double(rolling.host_utilization.average) << ","
+        << format_double(rolling.host_utilization.peak) << ","
+        << rolling.nic_utilization.samples << ","
+        << format_double(rolling.nic_utilization.latest) << ","
+        << format_double(rolling.nic_utilization.average) << ","
+        << format_double(rolling.nic_utilization.peak) << ","
+        << rolling.sojourn.samples << ","
+        << format_double(rolling.sojourn.mean_queue_time) << ","
+        << format_double(rolling.sojourn.mean_service_time) << ","
+        << format_double(rolling.sojourn.mean_latency) << ","
+        << format_double(rolling.sojourn.p95_latency) << ","
+        << format_double(rolling.sojourn.p99_latency);
     for (const auto& key : metadata_keys) {
         auto it = result.metadata.find(key);
         if (it != result.metadata.end()) {

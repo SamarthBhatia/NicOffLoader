@@ -134,7 +134,17 @@ Once you have a profile and workload YAML ready, invoke the single-run CLI and o
   --output run.json
 ```
 
-Available policy identifiers match the TUI presets: `none`, `descending-id`, `limit-active-1`, `prefer-host`, and `prefer-nic`.
+Available policy identifiers match the TUI presets: `none`, `descending-id`, `limit-active-1`, `prefer-host`, `prefer-nic`, and the new `prefer-adaptive`, which leans toward NIC-heavy tasks whenever the rolling queue/utilization windows show the host saturating (and swings back toward host-heavy work once NIC contention dominates).
+
+Rolling metrics now drive policy decisions as well, so you can tune the look-back windows directly from the CLI:
+
+```bash
+  --rolling-queue-window-us <µs>    # horizon for the waiting-queue average/peak (default 50_000)
+  --rolling-util-window-us <µs>     # horizon for host/NIC utilization averages (default 50_000)
+  --rolling-sojourn-window-tasks <N>  # number of most recent tasks tracked in the sojourn stats (default 128)
+```
+
+Every batch/manifest entry also accepts a `rolling_windows:` block with `queue_us`, `util_us`, and/or `sojourn_tasks` keys if you prefer YAML-based overrides.
 Each run summary now prints the policy’s waiting-queue reorder count and normalized per-task ratio in addition to throughput/latency so you can confirm policy hooks are active without opening the JSON report.
 
 You can also supply defaults via a manifest:

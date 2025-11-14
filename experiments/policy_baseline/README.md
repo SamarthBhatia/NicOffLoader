@@ -31,12 +31,14 @@ and will append new rows to the CSV automatically. The `summarize.py` helper rea
  table (sort by throughput by default or mean latency via `--sort mean_latency`), and now surfaces
 `arrival_label`/`background_load`/`zipf_alpha` columns automatically while still supporting metadata-aware filtering/grouping
 (`--filter workload_label=skew_dag --group-by policy`) plus extra columns via `--columns`. Its output now includes both a
- `reorders` column sourced from `policy_metrics.waiting_reorders` and both normalized ratios:
+`reorders` column sourced from `policy_metrics.waiting_reorders` and both normalized ratios:
 `reorders_per_task` (entire run) and `reorders_per_task_recent`, which captures the last 100 completed tasks (plus the effective window length) straight from the batch CSV so you can immediately spot spikes without waiting for the full run to finish (grouped views average the counts). `export_normalized.py`
 groups repeated runs, emits both a normalized CSV and (optionally) Parquet table (requires `pyarrow`),
 mirrors the `policy_metrics.waiting_reorders` counter into those exports, derives a `waiting_reorders_per_task`
 metric so notebooks can reason about reorder rates independent of throughput, and can join the static placement summary (`--static-summary`, defaults to `results/dag_static_summary.csv`)
 to annotate each DAG workload with host/NIC baseline throughput and latency deltas.
+The batch CSV (and therefore the normalized export, summarizer, and plots) now also records a concise snapshot of the rolling metrics surfaced by the simulator: queue depth samples/averages/peaks plus host/NIC utilization and sojourn mean/p95/p99 values.
+Those values live under the `rolling_queue_*`, `rolling_host_util_*`, `rolling_nic_util_*`, and `rolling_sojourn_*` columns so downstream analysis can pivot on short-horizon congestion/utilization without parsing the per-run JSON.
 Skew-DAG tiers (baseline vs. stress) defined in `workloads/tools/skew_dag_config.json` are expanded into both
 the placement manifest and this batch file whenever you rerun `python3 workloads/tools/generate_skew_dags.py`,
 so adding a new tier only requires editing the config once.
@@ -44,8 +46,7 @@ Variant metadata such as `zipf_alpha` and scenario annotations like `arrival_lab
 batch CSV (and therefore in the normalized export) so downstream tooling can pivot on light/stress tiers
 without guessing from the workload name. The manifest now also ships the `policy_queue_flip` workload (prefer-host vs.
 prefer-nic), which deterministically produces waiting-queue reorders so that the new ratio columns have non-zero coverage in every sweep.
-`plots/policy_baseline.py` consumes the normalized CSV to render throughput/latency comparison charts
-plus a waiting-reorder subplot that now charts both the cumulative and recent per-task ratios (annotating total and recent-window counts) and stores them under `plots/generated/`. If you prefer working directly in pandas/BI tooling, see `notebooks/rolling_reorder_example.md` for a lightweight walkthrough that loads `policy_baseline_normalized.csv`, prints the relevant columns, and recreates the side-by-side ratio plot from a notebook.
+`plots/policy_baseline.py` consumes the normalized CSV to render throughput/latency comparison charts plus a waiting-reorder subplot that now charts both the cumulative and recent per-task ratios (annotating total and recent-window counts). A fourth panel overlays the new rolling metrics (queue averages/peaks alongside host/NIC utilization and sojourn quantiles) so you can see how policies impact short-horizon congestion. All figures land under `plots/generated/`. If you prefer working directly in pandas/BI tooling, see `notebooks/rolling_reorder_example.md` for a lightweight walkthrough that loads `policy_baseline_normalized.csv`, prints the relevant columns, and recreates the side-by-side ratio plot from a notebook; it now also produces a queue/utilization subplot whenever the rolling columns are present.
 `import_static_traces.py` ingests the static placement sweep
 CSV and emits `dag_static_summary.csv`, capturing host- vs. NIC-pinned baselines for the skewed DAG
 scenarios so policy experiments can reference the fixed placements directly; the generated summary now

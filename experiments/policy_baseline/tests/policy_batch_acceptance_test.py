@@ -34,13 +34,34 @@ def run_batch(cli_path: pathlib.Path, manifest_path: pathlib.Path, csv_path: pat
         raise SystemExit(f"batch run did not create {csv_path}")
 
 
+ROLLING_POLICY_COLUMNS = (
+    "rolling_queue_samples",
+    "rolling_queue_latest",
+    "rolling_queue_average",
+    "rolling_queue_peak",
+    "rolling_host_util_samples",
+    "rolling_host_util_latest",
+    "rolling_host_util_average",
+    "rolling_host_util_peak",
+    "rolling_nic_util_samples",
+    "rolling_nic_util_latest",
+    "rolling_nic_util_average",
+    "rolling_nic_util_peak",
+    "rolling_sojourn_samples",
+    "rolling_sojourn_mean_queue_us",
+    "rolling_sojourn_mean_service_us",
+    "rolling_sojourn_mean_latency_us",
+    "rolling_sojourn_p95_latency_us",
+    "rolling_sojourn_p99_latency_us",
+)
+
 REQUIRED_POLICY_COLUMNS = (
     "waiting_reorders",
     "waiting_reorders_per_task",
     "waiting_reorders_recent",
     "waiting_reorder_recent_task_count",
     "waiting_reorders_per_task_recent",
-)
+) + ROLLING_POLICY_COLUMNS
 
 
 def missing_policy_columns(path: pathlib.Path) -> List[str]:
@@ -209,6 +230,7 @@ def verify_queue_flip(cli_path: pathlib.Path) -> list[str]:
     failures: list[str] = []
     none_report = run_queue_flip(cli_path, "none", "policy_queue_flip_none.json")
     prefer_nic_report = run_queue_flip(cli_path, "prefer-nic", "policy_queue_flip_prefer_nic.json")
+    adaptive_report = run_queue_flip(cli_path, "prefer-adaptive", "policy_queue_flip_prefer_adaptive.json")
 
     nic_task_id = 202
     host_task_id = 201
@@ -231,6 +253,22 @@ def verify_queue_flip(cli_path: pathlib.Path) -> list[str]:
     waiting_reorders = prefer_nic_report.get("policy_metrics", {}).get("waiting_reorders", 0)
     if waiting_reorders < 1:
         failures.append("prefer-nic policy did not emit any waiting queue reorders in the heavy scenario")
+
+    adaptive_nic_queue = task_queue_time(adaptive_report, nic_task_id)
+    adaptive_host_queue = task_queue_time(adaptive_report, host_task_id)
+    if not adaptive_nic_queue < nic_queue_none:
+        failures.append(
+            f"prefer-adaptive policy did not reduce NIC-heavy task queue time "
+            f"(none={nic_queue_none:.3f}us, prefer-adaptive={adaptive_nic_queue:.3f}us)"
+        )
+    if not adaptive_host_queue > host_queue_none:
+        failures.append(
+            f"prefer-adaptive policy did not defer host-heavy task "
+            f"(none={host_queue_none:.3f}us, prefer-adaptive={adaptive_host_queue:.3f}us)"
+        )
+    adaptive_reorders = adaptive_report.get("policy_metrics", {}).get("waiting_reorders", 0)
+    if adaptive_reorders < 1:
+        failures.append("prefer-adaptive policy did not emit any waiting queue reorders in the heavy scenario")
 
     return failures
 

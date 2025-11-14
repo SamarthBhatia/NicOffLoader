@@ -23,9 +23,17 @@ namespace {
 } // namespace
 
 BasicScheduler::BasicScheduler(ResourcePool resources, ServiceTimeModel* service_model)
+    : BasicScheduler(std::move(resources), service_model, RollingWindowConfig{}) {}
+
+BasicScheduler::BasicScheduler(ResourcePool resources,
+                               ServiceTimeModel* service_model,
+                               RollingWindowConfig rolling_config)
     : resources_(std::move(resources)),
       service_model_(service_model),
-      rolling_metrics_(kRollingQueueWindowUs, kRollingUtilizationWindowUs, kRollingSojournWindowTasks) {
+      rolling_config_(rolling_config),
+      rolling_metrics_(rolling_config_.queue_window_us,
+                       rolling_config_.utilization_window_us,
+                       rolling_config_.sojourn_window_tasks) {
     initialize_domain_usage();
     rolling_metrics_.record_queue_depth(current_time_, 0.0);
     record_utilization_sample(current_time_);
@@ -425,13 +433,9 @@ void BasicScheduler::initialize_domain_usage() {
     for (const auto& resource : snapshot) {
         switch (resource.type()) {
         case ResourceType::kHostCpu:
-        case ResourceType::kHostDram:
-        case ResourceType::kHostLink:
             host_usage_.capacity += resource.capacity();
             break;
         case ResourceType::kNicCpu:
-        case ResourceType::kNicDram:
-        case ResourceType::kNicLink:
             nic_usage_.capacity += resource.capacity();
             break;
         default:
@@ -448,13 +452,9 @@ void BasicScheduler::adjust_domain_usage(ResourceId resource_id, double delta) {
     DomainUsage* usage = nullptr;
     switch (resource->type()) {
     case ResourceType::kHostCpu:
-    case ResourceType::kHostDram:
-    case ResourceType::kHostLink:
         usage = &host_usage_;
         break;
     case ResourceType::kNicCpu:
-    case ResourceType::kNicDram:
-    case ResourceType::kNicLink:
         usage = &nic_usage_;
         break;
     default:
