@@ -79,6 +79,8 @@ ctest --test-dir build
 
 The `scheduler_property_fuzz_test` target now sweeps multiple policy hooks to enforce resource/timeline invariants. It is included automatically when you run `ctest --test-dir build` (≈0.1 s on CI). For a heavier local sweep, export `NICLOADOFF_FUZZ_STRESS=1` before invoking `ctest` to enable higher seed/burst counts and intra-trial policy mixing (~0.7 s on a laptop).
 
+Rolling metric regressions (`rolling_metrics_spike_test` and `rolling_metrics_nic_spike_test`) are part of the default suite as well; they replay the host- and NIC-saturation workloads under `nicloadoff_cli` and assert that the rolling queue/utilization/sojourn windows respond accordingly so policy hooks (notably `prefer-adaptive`) have dependable telemetry.
+
 The initial smoke test exercises the placeholder event queue implementation; expand the suite as simulator modules arrive.
 
 ### Pre-PR checklist
