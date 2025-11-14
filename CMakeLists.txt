@@ -18,6 +18,7 @@ endif()
 
 enable_testing()
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 add_subdirectory(sim)
 add_subdirectory(tools)
@@ -54,6 +55,16 @@ add_test(
             --cli $<TARGET_FILE:nicloadoff_cli>
             --profile ${CMAKE_SOURCE_DIR}/profiles/bf2_default.yaml
             --workload ${CMAKE_SOURCE_DIR}/workloads/tests/rolling_spike_nic.yaml
+)
+
+add_test(
+    NAME policy_dsl_test
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tools/cli/tests/policy_dsl_test.py
+            --cli $<TARGET_FILE:nicloadoff_cli>
+            --profile ${CMAKE_SOURCE_DIR}/profiles/bf2_default.yaml
+            --workload ${CMAKE_SOURCE_DIR}/workloads/tests/policy_queue_flip.yaml
+            --config ${CMAKE_SOURCE_DIR}/policies/examples/adaptive.dsl.yaml
 )
 
 add_custom_target(

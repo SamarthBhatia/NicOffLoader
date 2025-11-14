@@ -1,4 +1,5 @@
 #include "nicloadoff/basic_policy_hooks.hh"
+#include "nicloadoff/policy_dsl.hh"
 #include "nicloadoff/dag_submission_controller.hh"
 #include "nicloadoff/profile.hh"
 #include "nicloadoff/profile_resources.hh"
@@ -33,6 +34,13 @@ struct WorkloadPreset {
     std::string description;
     WorkloadSpec spec;
     std::optional<std::filesystem::path> source_path;
+};
+
+struct PolicyChoice {
+    std::string id;
+    std::string display_name;
+    std::string description;
+    std::optional<std::filesystem::path> dsl_path;
 };
 
 [[nodiscard]] std::string resource_type_to_string(ResourceType type) {
@@ -123,6 +131,25 @@ struct WorkloadPreset {
             if (ext == ".yaml" || ext == ".yml") {
                 paths.push_back(entry.path());
             }
+        }
+    }
+    std::sort(paths.begin(), paths.end());
+    return paths;
+}
+
+[[nodiscard]] std::vector<std::filesystem::path> discover_policy_configs(const std::filesystem::path& root) {
+    std::vector<std::filesystem::path> paths;
+    if (!std::filesystem::exists(root)) {
+        return paths;
+    }
+    for (const auto& entry : std::filesystem::directory_iterator(root)) {
+        if (!entry.is_regular_file()) {
+            continue;
+        }
+        auto ext = entry.path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+        if (ext == ".yaml" || ext == ".yml") {
+            paths.push_back(entry.path());
         }
     }
     std::sort(paths.begin(), paths.end());
@@ -236,6 +263,36 @@ struct WorkloadPreset {
         .source_path = std::nullopt,
     });
     return presets;
+}
+
+[[nodiscard]] std::vector<PolicyChoice> build_policy_choices() {
+    std::vector<PolicyChoice> choices;
+    for (const auto& info : policy::builtin_policies()) {
+        choices.push_back(PolicyChoice{
+            .id = info.id,
+            .display_name = info.display_name,
+            .description = info.description,
+            .dsl_path = std::nullopt,
+        });
+    }
+    const std::filesystem::path examples_root = std::filesystem::current_path() / "policies" / "examples";
+    for (const auto& path : discover_policy_configs(examples_root)) {
+        PolicyChoice choice;
+        choice.id = "dsl";
+        choice.display_name = "DSL: " + path.stem().string();
+        choice.description = "DSL policy loaded from " + path.string();
+        choice.dsl_path = std::filesystem::absolute(path);
+        choices.push_back(std::move(choice));
+    }
+    if (choices.empty()) {
+        choices.push_back(PolicyChoice{
+            .id = "none",
+            .display_name = "No policy",
+            .description = "No policy loaded.",
+            .dsl_path = std::nullopt,
+        });
+    }
+    return choices;
 }
 
 std::vector<WorkloadPreset> load_workloads_from_directory(const std::filesystem::path& dir,
@@ -451,7 +508,7 @@ struct AppState {
     std::vector<std::string> profile_names;
     std::vector<WorkloadPreset> workloads;
     std::vector<std::string> workload_names;
-    std::vector<policy::BuiltinPolicyInfo> policy_entries;
+    std::vector<PolicyChoice> policy_entries;
     std::vector<std::string> load_errors;
 
     int profile_index{0};
@@ -511,11 +568,27 @@ struct AppState {
         std::uint64_t seed_to_use = session && preserve_seed ? session->seed() : next_seed;
 
         std::string policy_id = "none";
+        std::optional<std::filesystem::path> policy_config;
+        std::string policy_label = "none";
         if (!policy_entries.empty()) {
             policy_index = std::clamp(policy_index, 0, static_cast<int>(policy_entries.size()) - 1);
-            policy_id = policy_entries[policy_index].id;
+            const auto& choice = policy_entries[policy_index];
+            policy_id = choice.id;
+            policy_label = choice.display_name;
+            policy_config = choice.dsl_path;
         }
-        auto policy_hook = policy::make_policy_hook(policy_id);
+        std::unique_ptr<policy::PolicyHook> policy_hook;
+        try {
+            if (policy_config) {
+                policy_hook = policy::dsl::load_program_from_file(*policy_config);
+            } else {
+                policy_hook = policy::make_policy_hook(policy_id);
+            }
+        } catch (const std::exception& ex) {
+            status_message = std::string("Failed to load policy: ") + ex.what();
+            session.reset();
+            return false;
+        }
 
         try {
             session = std::make_unique<SimulationSession>(profile, std::move(spec), seed_to_use, std::move(policy_hook));
@@ -525,11 +598,12 @@ struct AppState {
             return false;
         }
 
-        std::string policy_label = "none";
-        if (!policy_entries.empty()) {
-            policy_label = policy_entries[policy_index].display_name;
+        std::string policy_suffix;
+        if (!policy_entries.empty() && policy_entries[policy_index].dsl_path) {
+            policy_suffix = " [" + policy_entries[policy_index].dsl_path->filename().string() + "]";
         }
-        status_message = "Loaded profile and workload (policy: " + policy_label + "). Press space to run or 'n' to step.";
+        status_message =
+            "Loaded profile and workload (policy: " + policy_label + policy_suffix + "). Press space to run or 'n' to step.";
         if (!load_errors.empty()) {
             status_message += " (" + std::to_string(load_errors.size()) + " loader warning";
             if (load_errors.size() > 1) {
@@ -790,7 +864,7 @@ void draw_instructions(WINDOW* win, int start_row) {
         "  r     Reset (new seed)",
         "  H     Toggle host service mode",
         "  N     Toggle NIC service mode",
-        "  p     Cycle policy hook",
+        "  p/P   Cycle policy hook (built-ins + DSL configs under policies/examples/)",
         "  s     Save metrics to JSON",
         "  q     Quit",
     };
@@ -867,10 +941,16 @@ void draw_right_panel(WINDOW* win, const AppState& state, const SimulationSnapsh
                (state.host_stochastic ? "stochastic" : "deterministic"));
     print_line(std::string("  NIC service mode: ") +
                (state.nic_stochastic ? "stochastic" : "deterministic"));
-    std::string policy_label = state.policy_entries.empty()
-                                   ? std::string("None")
-                                   : state.policy_entries[state.policy_index].display_name;
+    std::string policy_label = "None";
+    std::optional<std::filesystem::path> policy_path;
+    if (!state.policy_entries.empty()) {
+        policy_label = state.policy_entries[state.policy_index].display_name;
+        policy_path = state.policy_entries[state.policy_index].dsl_path;
+    }
     print_line("  Policy: " + policy_label);
+    if (policy_path) {
+        print_line("    DSL config: " + policy_path->string());
+    }
     if (snapshot.admission_limit) {
         print_line("    Active tasks: " + std::to_string(snapshot.active_task_count) + " / " +
                    std::to_string(*snapshot.admission_limit));
@@ -985,7 +1065,7 @@ int main() {
     using namespace std::chrono;
 
     AppState state;
-    state.policy_entries = nicloadoff::policy::builtin_policies();
+    state.policy_entries = build_policy_choices();
     state.profile_paths = discover_profiles("profiles");
     state.workloads = build_presets();
 

@@ -68,6 +68,11 @@ target_link_libraries(run_metrics_test PRIVATE nicloadoff_sim)
 
 add_test(NAME run_metrics_test COMMAND run_metrics_test)
 
+add_executable(policy_adaptive_test policy_adaptive_test.cc)
+target_link_libraries(policy_adaptive_test PRIVATE nicloadoff_sim)
+
+add_test(NAME policy_adaptive_test COMMAND policy_adaptive_test)
+
 add_executable(rolling_runtime_metrics_test rolling_runtime_metrics_test.cc)
 target_link_libraries(rolling_runtime_metrics_test PRIVATE nicloadoff_sim)
 

@@ -147,6 +147,20 @@ Rolling metrics now drive policy decisions as well, so you can tune the look-bac
 ```
 
 Every batch/manifest entry also accepts a `rolling_windows:` block with `queue_us`, `util_us`, and/or `sojourn_tasks` keys if you prefer YAML-based overrides.
+
+#### DSL-driven policies
+
+The `dsl` policy id loads a YAML-based rule engine so you can author scheduling/admission heuristics without recompiling:
+
+```bash
+./build/tools/cli/nicloadoff_cli \
+  --profile profiles/bf2_default.yaml \
+  --workload workloads/tests/policy_queue_flip.yaml \
+  --policy dsl \
+  --policy-config policies/examples/adaptive.dsl.yaml
+```
+
+Each rule has an optional `when` condition and an `action`. Conditions compare one of the rolling metrics (`queue_avg`, `host_util_avg`, `nic_util_avg`, `sojourn_mean_us`) against a threshold using `>`, `>=`, `<`, or `<=`. Actions currently support `reorder: prefer-host|prefer-nic` (mirroring the built-in skew policies) and `admission: { max_active: N }`. The sample config under `policies/examples/adaptive.dsl.yaml` biases toward NIC-heavy work when the host queue builds up, swings back toward host-heavy tasks when the NIC saturates, and relaxes the admission limit once queues drain. Batch manifests can set `policy_config: path/to/rules.yaml` alongside `policy: dsl`, and `defaults.policy_config` applies to every run unless overridden.
 Each run summary now prints the policy’s waiting-queue reorder count and normalized per-task ratio in addition to throughput/latency so you can confirm policy hooks are active without opening the JSON report.
 
 You can also supply defaults via a manifest:
@@ -221,9 +235,9 @@ The interactive TUI lets you inspect profiles, step through workloads, and exper
    ```bash
    ./build/tools/tui/nicloadoff_tui
    ```
-3. Use the on-screen hints—`↑/↓` navigate menus, `Tab` swaps between profile/workload lists, `Space` toggles run/pause, `n` steps a single event, `H`/`N` toggle deterministic vs. stochastic sampling, `p` cycles built-in policies, `s` saves metrics, and `q` exits.
+3. Use the on-screen hints—`↑/↓` navigate menus, `Tab` swaps between profile/workload lists, `Space` toggles run/pause, `n` steps a single event, `H`/`N` toggle deterministic vs. stochastic sampling, `p` cycles policies (built-ins plus any DSL configs discovered under `policies/examples/`), `s` saves metrics, and `q` exits.
 
-The status panel shows the active policy, admission limits (if any), live queue/resource metrics, and the cumulative policy waiting-reorder count + per-task ratio so you can watch hooks make progress while stepping through events.
+The status panel shows the active policy, admission limits (if any), live queue/resource metrics, and the cumulative policy waiting-reorder count + per-task ratio so you can watch hooks make progress while stepping through events. When a DSL config is selected, the panel also prints the YAML path to confirm which rule file is driving the run.
 
 ## Technology Stack (current plan)
 - C++20 for simulator and policy modules.

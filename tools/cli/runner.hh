@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <iosfwd>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,7 @@ struct CliOptions {
     ServiceTimeMode host_mode{ServiceTimeMode::kDeterministic};
     ServiceTimeMode nic_mode{ServiceTimeMode::kDeterministic};
     std::string policy_id{"none"};
+    std::optional<std::filesystem::path> policy_config_path;
     bool show_help{false};
     bool batch_mode{false};
     std::filesystem::path batch_manifest_path;

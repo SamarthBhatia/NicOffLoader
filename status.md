@@ -34,9 +34,9 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 5 — Policy engine + mini-DSL MVP
 - **Focus:** Parser, runtime, stock policies.
-- **Done:** Not started.
-- **Next:** Define grammar (events, predicates, actions) and AST representation.
-- **Remaining:** Evaluate policies per decision, add fallback logic, implement stock policies, add unit tests with mocked state.
+- **Done:** Stood up a YAML-backed rule engine (metrics + comparisons + reorder/admission actions) accessible via `--policy dsl` + `--policy-config`, including an adaptive sample (`policies/examples/adaptive.dsl.yaml`) and end-to-end CLI/CTest coverage proving the DSL reorders the queue-flip workload; exposed DSL configs through manifests/batch runs and documented the workflow.
+- **Next:** Extend the DSL grammar with task/resource predicates (e.g., match on metadata or DAG stage) and add unit tests that exercise multiple rules firing across simulated snapshots.
+- **Remaining:** Evaluate policies per decision, add fallback logic, implement stock DSL policies, add unit tests with mocked state.
 
 ## Phase 6 — Hardware profiles & parameters
 - **Focus:** Parameterized BlueField-2/BF3 system models.

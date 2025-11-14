@@ -2,6 +2,7 @@
 
 #include "nicloadoff/basic_policy_hooks.hh"
 #include "nicloadoff/dag_submission_controller.hh"
+#include "nicloadoff/policy_dsl.hh"
 #include "nicloadoff/profile.hh"
 #include "nicloadoff/profile_resources.hh"
 #include "nicloadoff/scheduler.hh"
@@ -140,6 +141,7 @@ struct BatchDefaults {
     std::optional<std::string> policy_id;
     std::optional<ServiceTimeMode> host_mode;
     std::optional<ServiceTimeMode> nic_mode;
+    std::optional<std::filesystem::path> policy_config;
     std::map<std::string, std::string> metadata;
     struct RollingOverrides {
         std::optional<double> queue_window_us;
@@ -344,10 +346,13 @@ BatchDefaults parse_batch_defaults(const YAML::Node& node,
         defaults.seed = seed;
     }
     if (auto policy = read_optional_string(node, "policy")) {
-        if (!policy::is_policy_supported(*policy)) {
+        if (!policy::is_policy_supported(*policy) && *policy != "dsl") {
             throw std::runtime_error("batch manifest defaults policy '" + *policy + "' is not recognised");
         }
         defaults.policy_id = std::move(policy);
+    }
+    if (auto policy_config = read_optional_path(node, "policy_config", base_dir)) {
+        defaults.policy_config = std::move(policy_config);
     }
     if (const YAML::Node service_modes = node["service_modes"]) {
         if (!service_modes.IsMap()) {
@@ -393,6 +398,9 @@ CliOptions make_base_cli_options(const BatchDefaults& defaults) {
     }
     if (defaults.rolling_windows.sojourn_window_tasks) {
         options.rolling_sojourn_window_tasks = *defaults.rolling_windows.sojourn_window_tasks;
+    }
+    if (defaults.policy_config) {
+        options.policy_config_path = *defaults.policy_config;
     }
     options.batch_mode = false;
     options.batch_manifest_path.clear();
@@ -476,10 +484,15 @@ BatchRunConfig parse_batch_run(const YAML::Node& run_node,
         config.options.seed = *seed;
     }
     if (auto policy = read_optional_string(run_node, "policy")) {
-        if (!policy::is_policy_supported(*policy)) {
+        if (!policy::is_policy_supported(*policy) && *policy != "dsl") {
             throw std::runtime_error("batch run '" + config.name + "' has unknown policy '" + *policy + "'");
         }
         config.options.policy_id = *policy;
+    }
+    if (auto policy_config = read_optional_path(run_node, "policy_config", base_dir)) {
+        config.options.policy_config_path = *policy_config;
+    } else if (defaults.policy_config) {
+        config.options.policy_config_path = *defaults.policy_config;
     }
     apply_service_modes_override(run_node["service_modes"], config.options,
                                  "batch run '" + config.name + "'");
@@ -583,6 +596,7 @@ struct ManifestOptions {
     std::optional<double> rolling_queue_window_us;
     std::optional<double> rolling_util_window_us;
     std::optional<std::size_t> rolling_sojourn_window_tasks;
+    std::optional<std::filesystem::path> policy_config_path;
 };
 
 bool parse_manifest_file(const std::filesystem::path& manifest_path,
@@ -693,6 +707,12 @@ bool parse_manifest_file(const std::filesystem::path& manifest_path,
                 return false;
             }
             manifest.policy_id = value;
+        } else if (key == "policy_config") {
+            if (value.empty()) {
+                error = "manifest field 'policy_config' requires a value";
+                return false;
+            }
+            manifest.policy_config_path = resolve_path(value);
         } else if (key == "seed") {
             if (value.empty()) {
                 error = "manifest field 'seed' requires a value";
@@ -906,6 +926,7 @@ void print_usage(std::ostream& out) {
         << "  --host-mode <mode>       Host service mode: deterministic|stochastic (default: deterministic)\n"
         << "  --nic-mode <mode>        NIC service mode: deterministic|stochastic (default: deterministic)\n"
         << "  --policy <id>            Policy hook to register (options: none, descending-id, limit-active-1, prefer-host, prefer-nic, prefer-adaptive)\n"
+        << "  --policy-config <path>   Policy-specific configuration (required for --policy dsl)\n"
         << "  --rolling-queue-window-us <value>    Horizon (microseconds) for rolling queue depth averaging (default "
         << BasicScheduler::kRollingQueueWindowUs << ")\n"
         << "  --rolling-util-window-us <value>     Horizon (microseconds) for rolling utilization averaging (default "
@@ -924,6 +945,7 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
     bool nic_cli = false;
     bool policy_cli = false;
     bool manifest_cli = false;
+    bool policy_config_cli = false;
     bool rolling_queue_cli = false;
     bool rolling_util_cli = false;
     bool rolling_sojourn_cli = false;
@@ -1010,12 +1032,19 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
                 return false;
             }
             std::string value = argv[++i];
-            if (!policy::is_policy_supported(value)) {
+            if (!policy::is_policy_supported(value) && value != "dsl") {
                 error = "unknown policy: " + value;
                 return false;
             }
             options.policy_id = std::move(value);
             policy_cli = true;
+        } else if (arg == "--policy-config") {
+            if (i + 1 >= argc) {
+                error = "--policy-config requires a path argument";
+                return false;
+            }
+            options.policy_config_path = argv[++i];
+            policy_config_cli = true;
         } else if (arg == "--rolling-queue-window-us") {
             if (i + 1 >= argc) {
                 error = "--rolling-queue-window-us requires a numeric argument";
@@ -1082,7 +1111,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
     }
 
     if (options.batch_mode) {
-        if (profile_cli || workload_cli || output_cli || seed_cli || host_cli || nic_cli || policy_cli || manifest_cli) {
+        if (profile_cli || workload_cli || output_cli || seed_cli || host_cli || nic_cli || policy_cli || manifest_cli ||
+            policy_config_cli) {
             error = "--batch cannot be combined with other CLI options";
             return false;
         }
@@ -1125,11 +1155,14 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
             options.nic_mode = *manifest_options.nic_mode;
         }
         if (!policy_cli && manifest_options.policy_id) {
-            if (!policy::is_policy_supported(*manifest_options.policy_id)) {
+            if (!policy::is_policy_supported(*manifest_options.policy_id) && *manifest_options.policy_id != "dsl") {
                 error = "manifest policy '" + *manifest_options.policy_id + "' is not recognised";
                 return false;
             }
             options.policy_id = *manifest_options.policy_id;
+        }
+        if (!policy_config_cli && manifest_options.policy_config_path) {
+            options.policy_config_path = *manifest_options.policy_config_path;
         }
         if (!rolling_queue_cli && manifest_options.rolling_queue_window_us) {
             options.rolling_queue_window_us = *manifest_options.rolling_queue_window_us;
@@ -1169,7 +1202,15 @@ RunSummary run_simulation(const CliOptions& options) {
     BasicScheduler scheduler(std::move(inventory.pool), &service_model, rolling_config);
     scheduler.set_policy_metadata(options.metadata);
 
-    std::unique_ptr<policy::PolicyHook> policy_hook = policy::make_policy_hook(options.policy_id);
+    std::unique_ptr<policy::PolicyHook> policy_hook;
+    if (options.policy_id == "dsl") {
+        if (!options.policy_config_path) {
+            throw std::runtime_error("--policy dsl requires --policy-config <path>");
+        }
+        policy_hook = policy::dsl::load_program_from_file(*options.policy_config_path);
+    } else {
+        policy_hook = policy::make_policy_hook(options.policy_id);
+    }
     if (policy_hook) {
         scheduler.set_policy_hook(policy_hook.get());
     }

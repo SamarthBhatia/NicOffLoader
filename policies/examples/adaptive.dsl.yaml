@@ -1,0 +1,20 @@
+rules:
+  - when:
+      metric: queue_avg
+      op: ">"
+      value: 0.5
+    action:
+      reorder: prefer-nic
+  - when:
+      metric: nic_util_avg
+      op: ">"
+      value: 0.7
+    action:
+      reorder: prefer-host
+  - when:
+      metric: queue_avg
+      op: "<="
+      value: 0.2
+    action:
+      admission:
+        max_active: 2

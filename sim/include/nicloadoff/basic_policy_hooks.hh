@@ -17,8 +17,6 @@ struct BuiltinPolicyInfo {
     std::string description;
 };
 
-namespace detail {
-
 inline std::vector<TaskId> reorder_waiting_by_demand(const PolicyStateSnapshot& snapshot, bool prefer_host) {
     std::vector<TaskId> order = snapshot.waiting_task_order;
     if (order.empty()) {
@@ -53,6 +51,8 @@ inline std::vector<TaskId> reorder_waiting_by_demand(const PolicyStateSnapshot& 
     });
     return order;
 }
+
+namespace detail {
 
 class DescendingIdPolicy : public PolicyHook {
   public:
