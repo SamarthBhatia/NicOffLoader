@@ -28,6 +28,7 @@ def load_metrics(csv_path: pathlib.Path) -> List[Tuple[str, Metrics]]:
         if not reader.fieldnames:
             raise ValueError(f"{csv_path} is empty or missing a header row.")
         for row in reader:
+            # Optional filters are applied in main by pruning rows before aggregation.
             key = row["run_name"]
             grouped[key].append(
                 {
@@ -243,9 +244,31 @@ def main() -> int:
     default_output = pathlib.Path("plots/generated/policy_baseline.png")
     parser.add_argument("--csv", type=pathlib.Path, default=default_csv, help="Path to policy baseline CSV input")
     parser.add_argument("--output", type=pathlib.Path, default=default_output, help="Output image path")
+    parser.add_argument(
+        "--workload-label",
+        default="",
+        help="Optional workload_label filter (empty to include all)",
+    )
+    parser.add_argument(
+        "--arrival-label",
+        default="",
+        help="Optional arrival_label filter (empty to include all)",
+    )
     args = parser.parse_args()
 
-    results = load_metrics(args.csv)
+    raw = load_metrics(args.csv)
+    # Apply filters if provided.
+    filtered = []
+    for name, metrics in raw:
+        # run_name encodes workload; normalized CSV also carries workload_label/arrival_label in columns
+        # but the plot consumes aggregated entries keyed by run_name, so we keep that key stable.
+        if args.workload_label and args.workload_label not in name:
+            continue
+        if args.arrival_label and args.arrival_label not in name:
+            continue
+        filtered.append((name, metrics))
+
+    results = filtered
     if not results:
         print("No rows available in the CSV; skipping plot generation.")
         return 0

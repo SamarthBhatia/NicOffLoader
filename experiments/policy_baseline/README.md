@@ -17,6 +17,10 @@ cmake --build build --target nicloadoff_cli
 python3 experiments/policy_baseline/summarize.py
 python3 experiments/policy_baseline/export_normalized.py
 python3 plots/policy_baseline.py --csv experiments/policy_baseline/results/policy_baseline_normalized.csv
+python3 plots/policy_baseline.py --csv experiments/policy_baseline/results/policy_baseline_normalized.csv --workload-label skew_dag --arrival-label stress
+python3 experiments/policy_baseline/join_placement.py
+python3 plots/policy_vs_placement.py
+python3 experiments/policy_baseline/notebooks/policy_vs_placement_example.py
 ```
 
 Paths inside the manifest are resolved relative to the manifest’s directory, so the sample uses `../../`
@@ -40,6 +44,9 @@ metric so notebooks can reason about reorder rates independent of throughput, an
 to annotate each DAG workload with host/NIC baseline throughput and latency deltas. The notebook helper
 (`notebooks/rolling_reorder_example.py`) now auto-detects CSV vs. Parquet and accepts `--input-format parquet`
 so downstream dashboards can read the normalized schema without extra conversions.
+`join_placement.py` consumes the normalized policy export (CSV or Parquet) and the placement sweep CSV to emit a joined table (CSV + Parquet) that annotates each policy run with host- vs. NIC-pinned placement metrics and deltas, making cross-policy/placement comparisons one command away (it now warns if a policy row is missing a placement match so you know to refresh placement results).
+`plots/policy_vs_placement.py` renders the joined table as throughput/latency deltas versus host/NIC placements so you can visualize how policies shift performance relative to static placement baselines.
+If you prefer a quick table over the joined data, `notebooks/policy_vs_placement_example.py` reads the CSV/Parquet, filters by workload/arrival, and prints a ready-to-copy slice (no plotting dependency).
 The batch CSV (and therefore the normalized export, summarizer, and plots) now also records a concise snapshot of the rolling metrics surfaced by the simulator: queue depth samples/averages/peaks plus host/NIC utilization and sojourn mean/p95/p99 values.
 Those values live under the `rolling_queue_*`, `rolling_host_util_*`, `rolling_nic_util_*`, and `rolling_sojourn_*` columns so downstream analysis can pivot on short-horizon congestion/utilization without parsing the per-run JSON.
 Skew-DAG tiers (baseline vs. stress) defined in `workloads/tools/skew_dag_config.json` are expanded into both
