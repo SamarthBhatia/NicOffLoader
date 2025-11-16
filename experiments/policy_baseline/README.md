@@ -22,7 +22,8 @@ python3 plots/policy_baseline.py --csv experiments/policy_baseline/results/polic
 Paths inside the manifest are resolved relative to the manifest’s directory, so the sample uses `../../`
 to reach repo-level fixtures. Each run entry inherits defaults for the profile, workload, seed, and
 output directory. Metadata fields declared under `defaults.metadata` (or overridden per run) are copied
-into the CSV so you can capture annotations like arrival models or load regimes. The example manifest
+into the CSV so you can capture annotations like arrival models or load regimes. If you want to pin a stable
+schema for downstream joins (e.g., with placement sweeps), declare `metadata_keys` at the manifest root to force those columns into the header even when a run omits them. The example manifest
 ships both the baseline KV workload and DAG-heavy `skew_dag` mixes (including the Zipf>1.2
 `skew_dag_zipf14` and even harsher `skew_dag_zipf18` variants) so policy comparisons cover single-path
 and dependency-driven scenarios;
@@ -36,7 +37,9 @@ and will append new rows to the CSV automatically. The `summarize.py` helper rea
 groups repeated runs, emits both a normalized CSV and (optionally) Parquet table (requires `pyarrow`),
 mirrors the `policy_metrics.waiting_reorders` counter into those exports, derives a `waiting_reorders_per_task`
 metric so notebooks can reason about reorder rates independent of throughput, and can join the static placement summary (`--static-summary`, defaults to `results/dag_static_summary.csv`)
-to annotate each DAG workload with host/NIC baseline throughput and latency deltas.
+to annotate each DAG workload with host/NIC baseline throughput and latency deltas. The notebook helper
+(`notebooks/rolling_reorder_example.py`) now auto-detects CSV vs. Parquet and accepts `--input-format parquet`
+so downstream dashboards can read the normalized schema without extra conversions.
 The batch CSV (and therefore the normalized export, summarizer, and plots) now also records a concise snapshot of the rolling metrics surfaced by the simulator: queue depth samples/averages/peaks plus host/NIC utilization and sojourn mean/p95/p99 values.
 Those values live under the `rolling_queue_*`, `rolling_host_util_*`, `rolling_nic_util_*`, and `rolling_sojourn_*` columns so downstream analysis can pivot on short-horizon congestion/utilization without parsing the per-run JSON.
 Skew-DAG tiers (baseline vs. stress) defined in `workloads/tools/skew_dag_config.json` are expanded into both
@@ -63,6 +66,26 @@ cmake --build build --target policy_analysis
 ```
 
 The script runs `export_normalized.py`, then `plots/policy_baseline.py`, and finally the pandas helper (`notebooks/rolling_reorder_example.py`). It automatically skips steps when optional dependencies are missing (install `matplotlib`/`pandas` via `python3 -m pip install <pkg>` to enable the full pipeline).
+
+### CI artifacts
+
+The `policy-analysis` GitHub Actions job reuses the `cmake --build build --target policy_analysis` target and then uploads a single artifact bundle named `policy-analysis-<commit-sha>`. Each artifact contains:
+
+- `experiments/policy_baseline/results/policy_baseline_normalized.csv`
+- `experiments/policy_baseline/results/policy_baseline.parquet`
+- `plots/generated/policy_baseline.png`
+- `plots/generated/rolling_reorder_example.png`
+
+To grab the latest snapshot after a CI failure:
+
+1. Navigate to the failing workflow run → `policy-analysis` job → **Artifacts** → download `policy-analysis-<sha>.zip`.
+2. Or use the GitHub CLI: `gh run download <run-id> --name policy-analysis-<sha>` and unzip locally (the paths above are preserved inside the archive).
+
+Prefer an automated workflow? Run `python3 tools/ci/fetch_policy_artifacts.py` from the repo root. The helper looks up the most recent `CI` workflow run whose head SHA matches your current `HEAD`, downloads the `policy-analysis-<sha>` artifact, and extracts it under `artifacts/policy-analysis/extracted/`. Need the newest passing run instead? Add `--latest --status success` to grab the freshest successful job on the current branch (even if your checkout is older), or `--list` to print the last N runs (IDs, status, branch, SHA) before choosing one. By default the script shells out to the GitHub CLI (`gh`). If `gh` is unavailable (or you pass `--use-api`), it falls back to the GitHub REST API—just ensure `GITHUB_TOKEN` (or `--token`) points to a PAT with `actions:read`. Pass `--run-id <id>` (or `--branch/--sha`) to override the selection logic, `--repo owner/name` to target forks, and `--download-dir/--extract-dir` to change destinations.
+
+Prefer using the build system instead? `cmake --build build --target fetch_policy_artifacts` runs the same helper (with the repo root as its working directory); make sure either the GitHub CLI is installed or `GITHUB_TOKEN` is set so the REST fallback can authenticate.
+
+These artifacts mirror exactly what `run_analysis.sh` emits, so you can open the CSVs/Parquet in notebooks or inspect the rendered plots without rerunning the sweep locally. Keep the archive (or the helper’s extracted snapshot) handy when debugging CI regressions so reviewers can reproduce the failure context.
 
 ### Skew placement reference
 

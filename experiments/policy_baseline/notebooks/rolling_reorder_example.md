@@ -14,6 +14,9 @@ python3 -m pip install pandas matplotlib
 ```bash
 # Table + plot (requires pandas + matplotlib)
 python3 experiments/policy_baseline/notebooks/rolling_reorder_example.py
+python3 experiments/policy_baseline/notebooks/rolling_reorder_example.py \
+  --csv experiments/policy_baseline/results/policy_baseline.parquet \
+  --input-format parquet
 
 # Table only (skips matplotlib dependency)
 python3 experiments/policy_baseline/notebooks/rolling_reorder_example.py --no-plot
@@ -26,7 +29,7 @@ python3 experiments/policy_baseline/notebooks/rolling_reorder_example.py \
 
 The script/snippet:
 
-1. Loads the normalized CSV (which already contains both cumulative and rolling reorder metrics plus the effective window size).
+1. Loads the normalized CSV/Parquet export (which already contains both cumulative and rolling reorder metrics plus the effective window size).
 2. Filters to a specific workload/policy slice (defaults to `workload_label=skew_dag`; override via CLI flags) so comparisons stay readable.
 3. Prints a ready-to-copy table that downstream dashboards can ingest.
 4. Optionally renders a paired bar chart (using matplotlib) to visualize total vs. recent reorder ratios, mirroring the in-tree plot but directly within pandas so it can be adapted into notebooks or BI tools. When the normalized CSV includes the `rolling_queue_*` / `rolling_host_util_*` / `rolling_nic_util_*` / `rolling_sojourn_*` columns (now emitted by the batch CLI), the helper adds a second subplot that overlays queue averages/peaks with host/NIC utilization and annotates the rolling sojourn p95/p99 latencies for the selected slice.

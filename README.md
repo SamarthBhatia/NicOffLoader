@@ -172,12 +172,15 @@ workload: workloads/examples/sequential_host.yaml
 policy: prefer-host
 output: results/run_host.json
 seed: 7
+metadata:
+  workload_label: seq_host
+  arrival_label: deterministic
 service_modes:
   host: deterministic
   nic: stochastic
 ```
 
-Run it with `./build/tools/cli/nicloadoff_cli --config run_manifest.yaml`. Command-line flags still override manifest settings.
+Run it with `./build/tools/cli/nicloadoff_cli --config run_manifest.yaml`. Command-line flags still override manifest settings, and any `metadata:` entries are threaded into the JSON report (and batch CSVs) so experiment dashboards can join runs by scenario labels.
 
 ### Batch CLI runs
 For policy sweeps, pass a batch manifest that lists multiple runs. Batch mode executes each entry,

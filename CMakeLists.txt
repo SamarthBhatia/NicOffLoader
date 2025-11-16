@@ -73,3 +73,17 @@ add_custom_target(
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Export/plot/pandas policy baseline analysis outputs"
 )
+
+add_custom_target(
+    fetch_policy_artifacts
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tools/ci/fetch_policy_artifacts.py
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Download latest policy-analysis artifact via GitHub CLI"
+)
+
+add_test(
+    NAME fetch_policy_artifacts_helper_test
+    COMMAND ${Python3_EXECUTABLE} -m unittest tools.ci.tests.fetch_policy_artifacts_test
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)

@@ -28,6 +28,12 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Optional arrival_label filter (empty string to disable)",
     )
+    parser.add_argument(
+        "--input-format",
+        choices=["auto", "csv", "parquet"],
+        default="auto",
+        help="Input format (default: auto-detect from extension)",
+    )
     parser.add_argument("--output-plot", type=pathlib.Path, default=default_plot, help="Plot output path")
     parser.add_argument("--no-plot", action="store_true", help="Skip plotting (table only)")
     return parser.parse_args()
@@ -46,8 +52,20 @@ def ensure_matplotlib() -> "module":
 
 def load_subset(args: argparse.Namespace) -> pd.DataFrame:
     if not args.csv.exists():
-        raise SystemExit(f"CSV not found at {args.csv}. Run export_normalized.py first.")
-    df = pd.read_csv(args.csv)
+        raise SystemExit(f"Input file not found at {args.csv}. Run export_normalized.py first.")
+    fmt = args.input_format
+    if fmt == "auto":
+        fmt = "parquet" if args.csv.suffix.lower() == ".parquet" else "csv"
+    try:
+        if fmt == "parquet":
+            df = pd.read_parquet(args.csv)
+        else:
+            df = pd.read_csv(args.csv)
+    except ImportError as exc:  # pragma: no cover - dependency hint
+        raise SystemExit(
+            "Reading Parquet requires pandas with an installed engine (pyarrow or fastparquet). "
+            "Install one (e.g., `python3 -m pip install pyarrow`) or pass --input-format csv."
+        ) from exc
     mask = pd.Series(True, index=df.index, dtype=bool)
     if args.workload_label:
         mask &= df["workload_label"] == args.workload_label

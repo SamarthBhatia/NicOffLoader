@@ -12,6 +12,13 @@ defaults:
     host: deterministic
     nic: deterministic
   seed: 1
+metadata_keys:
+  - workload_label
+  - arrival_model
+  - background_load
+  - zipf_alpha
+  - arrival_label
+  - placement
 csv: ./results/policy_baseline.csv
 runs:
   - name: prefer-host

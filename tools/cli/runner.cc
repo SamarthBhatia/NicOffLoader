@@ -540,6 +540,17 @@ BatchManifestData parse_batch_manifest_data(const std::filesystem::path& manifes
         }
         manifest.csv_path = resolve_relative_path(manifest.base_dir, csv.as<std::string>());
     }
+    if (const YAML::Node keys = root["metadata_keys"]) {
+        if (!keys.IsSequence()) {
+            throw std::runtime_error("batch manifest 'metadata_keys' must be a list");
+        }
+        for (const auto& entry : keys) {
+            if (!entry.IsScalar()) {
+                throw std::runtime_error("batch manifest metadata_keys entries must be strings");
+            }
+            metadata_keys.insert(entry.as<std::string>());
+        }
+    }
 
     manifest.defaults = parse_batch_defaults(root["defaults"], manifest.base_dir, metadata_keys);
 
@@ -597,6 +608,7 @@ struct ManifestOptions {
     std::optional<double> rolling_util_window_us;
     std::optional<std::size_t> rolling_sojourn_window_tasks;
     std::optional<std::filesystem::path> policy_config_path;
+    std::map<std::string, std::string> metadata;
 };
 
 bool parse_manifest_file(const std::filesystem::path& manifest_path,
@@ -612,6 +624,7 @@ bool parse_manifest_file(const std::filesystem::path& manifest_path,
     std::string line;
     std::size_t line_number = 0;
     bool in_service_modes = false;
+    bool in_metadata = false;
 
     auto resolve_path = [&](const std::string& value) -> std::filesystem::path {
         std::filesystem::path path_value = value;
@@ -636,10 +649,15 @@ bool parse_manifest_file(const std::filesystem::path& manifest_path,
 
         if (!indented) {
             in_service_modes = false;
+            in_metadata = false;
         }
 
         if (trimmed == "service_modes:") {
             in_service_modes = true;
+            continue;
+        }
+        if (trimmed == "metadata:") {
+            in_metadata = true;
             continue;
         }
 
@@ -680,6 +698,15 @@ bool parse_manifest_file(const std::filesystem::path& manifest_path,
                 error = oss.str();
                 return false;
             }
+            continue;
+        }
+
+        if (in_metadata) {
+            if (key.empty()) {
+                error = "manifest metadata key missing on line " + std::to_string(line_number);
+                return false;
+            }
+            manifest.metadata[key] = value;
             continue;
         }
 
@@ -831,6 +858,22 @@ void write_report(const CliOptions& options,
     out << "    \"host\": \"" << service_mode_to_string(options.host_mode) << "\",\n";
     out << "    \"nic\": \"" << service_mode_to_string(options.nic_mode) << "\"\n";
     out << "  },\n";
+    out << "  \"metadata\": ";
+    if (options.metadata.empty()) {
+        out << "{}"
+            << ",\n";
+    } else {
+        out << "{\n";
+        std::size_t count = 0;
+        for (const auto& [key, value] : options.metadata) {
+            out << "    \"" << json_escape(key) << "\": \"" << json_escape(value) << "\"";
+            if (++count < options.metadata.size()) {
+                out << ",";
+            }
+            out << "\n";
+        }
+        out << "  },\n";
+    }
     out << "  \"run\": {\n";
     out << "    \"start_time_us\": " << format_double(start_time, 6) << ",\n";
     out << "    \"finish_time_us\": " << format_double(finish_time, 6) << ",\n";
@@ -1172,6 +1215,9 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
         }
         if (!rolling_sojourn_cli && manifest_options.rolling_sojourn_window_tasks) {
             options.rolling_sojourn_window_tasks = *manifest_options.rolling_sojourn_window_tasks;
+        }
+        if (options.metadata.empty() && !manifest_options.metadata.empty()) {
+            options.metadata = manifest_options.metadata;
         }
     }
 

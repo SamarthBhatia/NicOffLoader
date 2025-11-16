@@ -74,6 +74,7 @@ int main() {
 
     assert_contains(content, "\"profile\": {", "expected profile section");
     assert_contains(content, "\"workload\": {", "expected workload section");
+    assert_contains(content, "\"metadata\": {", "expected metadata section");
     assert_contains(content, "\"run\": {", "expected run section");
     assert_contains(content, "\"aggregates\": {", "expected aggregates section");
     assert_contains(content, "\"rolling_metrics\": {", "expected rolling metrics section");
@@ -122,6 +123,9 @@ int main() {
         manifest << "service_modes:\n";
         manifest << "  host: deterministic\n";
         manifest << "  nic: stochastic\n";
+        manifest << "metadata:\n";
+        manifest << "  scenario: smoke\n";
+        manifest << "  arrival_label: deterministic\n";
     }
 
     std::vector<std::string> argv_storage = {"nicloadoff_cli", "--config", manifest_path.string()};
@@ -147,10 +151,17 @@ int main() {
           "manifest should set NIC service mode");
     check(manifest_options.rolling_queue_window_us == 120000.0, "manifest should set rolling queue window");
     check(manifest_options.rolling_sojourn_window_tasks == 2, "manifest should set rolling sojourn window");
+    check(manifest_options.metadata.at("scenario") == "smoke", "manifest should set scenario metadata");
+    check(manifest_options.metadata.at("arrival_label") == "deterministic", "manifest should set arrival metadata");
 
     const RunSummary manifest_summary = run_simulation(manifest_options);
     check(manifest_summary.completed_tasks == summary.completed_tasks,
           "manifest-driven run should complete same number of tasks");
+    std::ifstream manifest_report(manifest_output);
+    check(static_cast<bool>(manifest_report), "expected manifest-driven report to open");
+    std::string manifest_content((std::istreambuf_iterator<char>(manifest_report)), std::istreambuf_iterator<char>());
+    assert_contains(manifest_content, "\"scenario\": \"smoke\"", "manifest metadata missing scenario key");
+    assert_contains(manifest_content, "\"arrival_label\": \"deterministic\"", "manifest metadata missing arrival_label");
 
     std::filesystem::remove(manifest_output, ec);
     std::filesystem::remove(manifest_path, ec);
@@ -164,10 +175,16 @@ int main() {
     {
         std::ofstream manifest(batch_manifest);
         check(static_cast<bool>(manifest), "failed to open batch manifest");
+        manifest << "metadata_keys:\n";
+        manifest << "  - arrival_label\n";
+        manifest << "  - scenario\n";
         manifest << "defaults:\n";
         manifest << "  profile: " << profile.string() << "\n";
         manifest << "  workload: " << workload.string() << "\n";
         manifest << "  output_dir: " << batch_output_dir.string() << "\n";
+        manifest << "  metadata:\n";
+        manifest << "    arrival_label: batch-default\n";
+        manifest << "    scenario: regression\n";
         manifest << "csv: " << batch_csv.string() << "\n";
         manifest << "runs:\n";
         manifest << "  - name: prefer-host\n";
@@ -186,6 +203,8 @@ int main() {
     assert_contains(batch_csv_content, "prefer-host", "batch csv missing first run");
     assert_contains(batch_csv_content, "prefer-nic", "batch csv missing second run");
     assert_contains(batch_csv_content, "rolling_queue_average", "batch csv missing rolling metrics column");
+    assert_contains(batch_csv_content, "arrival_label", "batch csv missing metadata header");
+    assert_contains(batch_csv_content, "batch-default", "batch csv missing metadata value");
 
     for (const auto& run : batch_results) {
         check(std::filesystem::exists(run.options.output_path), "expected batch output json");
