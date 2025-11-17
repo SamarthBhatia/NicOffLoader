@@ -5,7 +5,9 @@
 
 #include <filesystem>
 #include <memory>
+#include <map>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace nicloadoff::policy::dsl {
@@ -32,6 +34,21 @@ struct Condition {
     [[nodiscard]] bool evaluate(const PolicyStateSnapshot& snapshot) const;
 };
 
+struct TaskPredicate {
+    std::optional<std::string> stage_label;
+    std::optional<std::size_t> stage_index;
+
+    [[nodiscard]] bool matches(const PolicyTaskState& task) const;
+};
+
+struct RulePredicates {
+    std::optional<TaskPredicate> task;
+    std::map<std::string, std::string> metadata_equals;
+
+    [[nodiscard]] bool matches_metadata(const std::map<std::string, std::string>& metadata) const;
+    [[nodiscard]] bool matches_waiting_tasks(const PolicyStateSnapshot& snapshot) const;
+};
+
 enum class ReorderPreference {
     kPreferHost,
     kPreferNic,
@@ -49,6 +66,7 @@ struct Action {
 
 struct Rule {
     std::optional<Condition> condition;
+    std::optional<RulePredicates> predicates;
     Action action;
 };
 
@@ -66,4 +84,3 @@ std::unique_ptr<policy::PolicyHook> load_program_from_file(const std::filesystem
 } // namespace nicloadoff::policy::dsl
 
 #endif // NICLOADOFF_POLICY_DSL_HH
-

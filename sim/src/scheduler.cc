@@ -555,6 +555,7 @@ PolicyStateSnapshot BasicScheduler::policy_state_snapshot() const {
             if (status.stage_index < ctx.task.stages.size()) {
                 task_state.has_pending_stage = true;
                 const TaskStage& stage = ctx.task.stages[status.stage_index];
+                task_state.stage_label = stage.label;
                 for (const TaskRequirement& req : stage.requirements) {
                     const Resource* resource = resources_.find(req.resource_id);
                     if (resource == nullptr) {

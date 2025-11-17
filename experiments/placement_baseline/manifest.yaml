@@ -13,6 +13,28 @@
   ],
   "workloads": [
     {
+      "name": "kv_read_static",
+      "workload": "workloads/examples/kv_read_template.yaml",
+      "arrival": "workloads/arrivals/periodic_sweep.yaml",
+      "arrival_scales": [
+        1.0
+      ],
+      "seeds": [
+        1
+      ],
+      "placement_modes": [
+        "host_pinned",
+        "nic_pinned"
+      ],
+      "metadata": {
+        "workload_label": "kv_read",
+        "arrival_model": "periodic",
+        "zipf_alpha": "na",
+        "arrival_label": "deterministic",
+        "background_load": "low"
+      }
+    },
+    {
       "name": "kv_read_periodic",
       "workload": "workloads/examples/kv_read_template.yaml",
       "arrival": "workloads/arrivals/periodic_sweep.yaml",

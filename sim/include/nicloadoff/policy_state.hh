@@ -25,6 +25,7 @@ struct PolicyTaskState {
     TaskId id{};
     std::size_t stage_index{0};
     std::size_t total_stages{0};
+    std::string stage_label;
     bool active{false};
     bool waiting{false};
     bool completed{false};

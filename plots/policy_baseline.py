@@ -18,41 +18,49 @@ except ImportError as exc:  # pragma: no cover - dependency hint
 Metrics = Dict[str, float]
 
 
-def load_metrics(csv_path: pathlib.Path) -> List[Tuple[str, Metrics]]:
+def load_records(csv_path: pathlib.Path) -> List[Dict[str, str]]:
     if not csv_path.exists():
         raise FileNotFoundError(f"CSV not found at {csv_path}. Run the batch sweep first.")
-
-    grouped: Dict[str, List[Metrics]] = defaultdict(list)
     with csv_path.open() as handle:
         reader = csv.DictReader(handle)
         if not reader.fieldnames:
             raise ValueError(f"{csv_path} is empty or missing a header row.")
-        for row in reader:
-            # Optional filters are applied in main by pruning rows before aggregation.
-            key = row["run_name"]
-            grouped[key].append(
-                {
-                    "throughput": float(row["throughput_per_sec"]),
-                    "mean_latency": float(row["mean_latency_us"]),
-                    "p95_latency": float(row["p95_latency_us"]),
-                    "p99_latency": float(row["p99_latency_us"]),
-                    "peak_queue": float(row["peak_waiting_queue_depth"]),
-                    "waiting_reorders": float(row.get("waiting_reorders", 0.0) or 0.0),
-                    "waiting_ratio_total": float(row.get("waiting_reorders_per_task", 0.0) or 0.0),
-                    "waiting_reorders_recent": float(row.get("waiting_reorders_recent", 0.0) or 0.0),
-                    "waiting_ratio_recent": float(row.get("waiting_reorders_per_task_recent", 0.0) or 0.0),
-                    "waiting_recent_window": float(row.get("waiting_reorder_recent_task_count", 0.0) or 0.0),
-                    "rolling_queue_avg": float(row.get("rolling_queue_average", 0.0) or 0.0),
-                    "rolling_queue_peak": float(row.get("rolling_queue_peak", 0.0) or 0.0),
-                    "rolling_host_util_avg": float(row.get("rolling_host_util_average", 0.0) or 0.0),
-                    "rolling_host_util_peak": float(row.get("rolling_host_util_peak", 0.0) or 0.0),
-                    "rolling_nic_util_avg": float(row.get("rolling_nic_util_average", 0.0) or 0.0),
-                    "rolling_nic_util_peak": float(row.get("rolling_nic_util_peak", 0.0) or 0.0),
-                    "rolling_sojourn_mean": float(row.get("rolling_sojourn_mean_latency_us", 0.0) or 0.0),
-                    "rolling_sojourn_p95": float(row.get("rolling_sojourn_p95_latency_us", 0.0) or 0.0),
-                    "rolling_sojourn_p99": float(row.get("rolling_sojourn_p99_latency_us", 0.0) or 0.0),
-                }
-            )
+        return list(reader)
+
+
+def aggregate(records: List[Dict[str, str]],
+              workload_filter: str,
+              arrival_filter: str) -> List[Tuple[str, Metrics]]:
+    grouped: Dict[str, List[Metrics]] = defaultdict(list)
+    for row in records:
+        if workload_filter and row.get("workload_label", "") != workload_filter:
+            continue
+        if arrival_filter and row.get("arrival_label", "") != arrival_filter:
+            continue
+        key = row["run_name"]
+        grouped[key].append(
+            {
+                "throughput": float(row["throughput_per_sec"]),
+                "mean_latency": float(row["mean_latency_us"]),
+                "p95_latency": float(row["p95_latency_us"]),
+                "p99_latency": float(row["p99_latency_us"]),
+                "peak_queue": float(row["peak_waiting_queue_depth"]),
+                "waiting_reorders": float(row.get("waiting_reorders", 0.0) or 0.0),
+                "waiting_ratio_total": float(row.get("waiting_reorders_per_task", 0.0) or 0.0),
+                "waiting_reorders_recent": float(row.get("waiting_reorders_recent", 0.0) or 0.0),
+                "waiting_ratio_recent": float(row.get("waiting_reorders_per_task_recent", 0.0) or 0.0),
+                "waiting_recent_window": float(row.get("waiting_reorder_recent_task_count", 0.0) or 0.0),
+                "rolling_queue_avg": float(row.get("rolling_queue_average", 0.0) or 0.0),
+                "rolling_queue_peak": float(row.get("rolling_queue_peak", 0.0) or 0.0),
+                "rolling_host_util_avg": float(row.get("rolling_host_util_average", 0.0) or 0.0),
+                "rolling_host_util_peak": float(row.get("rolling_host_util_peak", 0.0) or 0.0),
+                "rolling_nic_util_avg": float(row.get("rolling_nic_util_average", 0.0) or 0.0),
+                "rolling_nic_util_peak": float(row.get("rolling_nic_util_peak", 0.0) or 0.0),
+                "rolling_sojourn_mean": float(row.get("rolling_sojourn_mean_latency_us", 0.0) or 0.0),
+                "rolling_sojourn_p95": float(row.get("rolling_sojourn_p95_latency_us", 0.0) or 0.0),
+                "rolling_sojourn_p99": float(row.get("rolling_sojourn_p99_latency_us", 0.0) or 0.0),
+            }
+        )
 
     summaries: List[Tuple[str, Metrics]] = []
     for name, entries in grouped.items():
@@ -256,19 +264,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    raw = load_metrics(args.csv)
-    # Apply filters if provided.
-    filtered = []
-    for name, metrics in raw:
-        # run_name encodes workload; normalized CSV also carries workload_label/arrival_label in columns
-        # but the plot consumes aggregated entries keyed by run_name, so we keep that key stable.
-        if args.workload_label and args.workload_label not in name:
-            continue
-        if args.arrival_label and args.arrival_label not in name:
-            continue
-        filtered.append((name, metrics))
-
-    results = filtered
+    records = load_records(args.csv)
+    results = aggregate(records, args.workload_label, args.arrival_label)
     if not results:
         print("No rows available in the CSV; skipping plot generation.")
         return 0

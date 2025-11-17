@@ -15,6 +15,13 @@ PY
 echo "[analysis] exporting normalized CSV (export_normalized.py)"
 python3 "$ROOT/experiments/policy_baseline/export_normalized.py"
 
+if [[ -w /tmp ]]; then
+    mkdir -p /tmp/mpl
+    export MPLCONFIGDIR=/tmp/mpl
+    export XDG_CACHE_HOME=/tmp
+fi
+export MPLBACKEND=Agg
+
 if has_module matplotlib; then
     echo "[analysis] rendering plots/policy_baseline.py"
     python3 "$ROOT/plots/policy_baseline.py"

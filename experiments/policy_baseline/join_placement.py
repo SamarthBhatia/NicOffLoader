@@ -20,6 +20,13 @@ PolicyRow = Dict[str, str]
 PlacementMetrics = Dict[str, float]
 PlacementEntry = Dict[str, PlacementMetrics]
 Key = Tuple[str, str, str, str]
+IGNORED_MISSING_WORKLOADS = {"policy_queue_flip"}
+
+
+def normalize_workload_label(label: str) -> str:
+    if label.endswith("_template"):
+        return label.replace("_template", "")
+    return label
 
 
 def parse_float(value: str | float | None) -> float | None:
@@ -63,8 +70,9 @@ def load_placement_rows(path: pathlib.Path) -> List[Dict[str, str]]:
 
 
 def make_key(row: Dict[str, str]) -> Key:
+    workload = row.get("workload_label") or row.get("workload") or row.get("workload_path") or ""
     return (
-        row.get("workload_label") or row.get("workload") or row.get("workload_path") or "",
+        normalize_workload_label(workload),
         row.get("arrival_label", ""),
         row.get("background_load", ""),
         row.get("zipf_alpha", ""),
@@ -134,7 +142,8 @@ def join(policy_rows: List[PolicyRow], placement_index: Dict[Key, PlacementEntry
         if key in placement_index:
             attach_placement(combined, placement_index[key])
         else:
-            missing.append(key)
+            if key[0] not in IGNORED_MISSING_WORKLOADS:
+                missing.append(key)
             combined.update(
                 {
                     "placement_host_throughput_per_sec": "",

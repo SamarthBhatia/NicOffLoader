@@ -175,6 +175,7 @@ TaskDag make_task_dag_from_spec(const TaskDAGSpec& spec, const ProfileResourceId
         TaskDagNode node;
         node.name = node_spec.name;
         node.stage = make_stage_from_spec(node_spec.stage, ids);
+        node.stage.label = node_spec.name;
         dag.index_by_name.emplace(node.name, dag.nodes.size());
         dag.nodes.push_back(std::move(node));
     }

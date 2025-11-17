@@ -34,8 +34,8 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 
 ## Phase 5 — Policy engine + mini-DSL MVP
 - **Focus:** Parser, runtime, stock policies.
-- **Done:** Stood up a YAML-backed rule engine (metrics + comparisons + reorder/admission actions) accessible via `--policy dsl` + `--policy-config`, including an adaptive sample (`policies/examples/adaptive.dsl.yaml`) and end-to-end CLI/CTest coverage proving the DSL reorders the queue-flip workload; exposed DSL configs through manifests/batch runs and documented the workflow.
-- **Next:** Extend the DSL grammar with task/resource predicates (e.g., match on metadata or DAG stage) and add unit tests that exercise multiple rules firing across simulated snapshots.
+- **Done:** Stood up a YAML-backed rule engine (metrics + comparisons + reorder/admission actions) accessible via `--policy dsl` + `--policy-config`, including an adaptive sample (`policies/examples/adaptive.dsl.yaml`) and end-to-end CLI/CTest coverage proving the DSL reorders the queue-flip workload; exposed DSL configs through manifests/batch runs and documented the workflow; added metadata + stage-aware DSL predicates (with stage labels exposed in policy snapshots) so rules can target specific DAG nodes, added ordered fallback semantics so rule sets can fill missing directives, and landed a unit test that drives multiple rules across distinct snapshots.
+- **Next:** Sketch stock stage-aware policies that exercise the new predicates under mocked state and expand tests to cover multi-rule compositions (e.g., reorder + admission) against DAG workloads.
 - **Remaining:** Evaluate policies per decision, add fallback logic, implement stock DSL policies, add unit tests with mocked state.
 
 ## Phase 6 — Hardware profiles & parameters
@@ -53,7 +53,7 @@ _Status is tracked per phase. Update the **Done / Next / Remaining** bullet list
 ## Phase 8 — Experiment harness
 - **Focus:** CLI runner, output schema, plotting scripts.
 - **Done:** Seeded single-run CLI harness (`nicloadoff_cli`) that emits aggregated JSON metrics for simulator runs, locked its JSON contract with a regression test, shipped an experiment/pipeline pairing (`experiments/placement_baseline/run.py` + `plots/placement_baseline.py`) that sweeps arrival scales and renders throughput/latency (mean + p95) plus peak queue-depth figures straight from the placement benchmark CSV, and added a first-class batch workflow (`nicloadoff_cli --batch`) with YAML manifests, CSV export, regression coverage, metadata propagation, a sample policy sweep (covering both KV and DAG workloads), plus summarize/normalize/plot helpers under `experiments/policy_baseline/`. Placement sweeps now emit placement-mode tags and normalized exports, while the policy pipeline can filter/group by manifest metadata. CLI manifests now carry metadata through to reports and batch CSVs (including optional `metadata_keys`), the normalized policy exports auto-detect CSV/Parquet so downstream notebooks can consume the shared schema directly, `join_placement.py` fuses the policy normalized CSV/Parquet with the placement sweep to emit policy-vs-placement deltas (CSV + Parquet, warning on missing placement matches), and `plots/policy_vs_placement.py` visualizes those deltas.
-- **Next:** Add a lightweight notebook/table snippet for the joined policy-vs-placement dataset and thread it into CI/docs so the plot generation is reproducible end-to-end.
+- **Next:** Thread the joined policy-vs-placement slice into CI/docs (policy_queue_flip remains intentionally without a placement baseline and is suppressed in joins) so plot generation is reproducible end-to-end.
 - **Remaining:** Produce reproducible plots for policy sweeps (throughput vs lambda, latency percentiles), add manifest-driven batches for DAG workloads, and archive results under `experiments/results/`.
 
 ## Phase 9 — Core experiments

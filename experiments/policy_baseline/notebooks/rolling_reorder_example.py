@@ -13,7 +13,7 @@ except ImportError as exc:  # pragma: no cover - dependency hint
 
 
 def parse_args() -> argparse.Namespace:
-    repo_root = pathlib.Path(__file__).resolve().parents[2]
+    repo_root = pathlib.Path(__file__).resolve().parents[3]
     default_csv = repo_root / "experiments" / "policy_baseline" / "results" / "policy_baseline_normalized.csv"
     default_plot = repo_root / "plots" / "generated" / "rolling_reorder_example.png"
     parser = argparse.ArgumentParser(description=__doc__)
