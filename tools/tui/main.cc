@@ -266,6 +266,23 @@ struct PolicyChoice {
     return presets;
 }
 
+std::string infer_arrival_label(const WorkloadPreset& preset, const std::vector<std::string>& labels) {
+    if (labels.empty()) {
+        return "steady";
+    }
+    std::string name = preset.name;
+    if (preset.source_path) {
+        name = preset.source_path->stem().string();
+    }
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (name.find("burst") != std::string::npos || name.find("spike") != std::string::npos) {
+        if (std::find(labels.begin(), labels.end(), "burst") != labels.end()) {
+            return "burst";
+        }
+    }
+    return labels.front();
+}
+
 [[nodiscard]] std::vector<PolicyChoice> build_policy_choices() {
     std::vector<PolicyChoice> choices;
     for (const auto& info : policy::builtin_policies()) {
@@ -578,6 +595,16 @@ struct AppState {
         workload_description = preset.description;
         if (preset.source_path) {
             workload_description += "\n\nSource: " + preset.source_path->string();
+        }
+
+        if (!preserve_seed) {
+            const std::string label = infer_arrival_label(preset, arrival_labels);
+            auto it = std::find(arrival_labels.begin(), arrival_labels.end(), label);
+            if (it != arrival_labels.end()) {
+                arrival_label_index = static_cast<int>(std::distance(arrival_labels.begin(), it));
+            } else {
+                arrival_label_index = 0;
+            }
         }
 
         metadata.clear();
