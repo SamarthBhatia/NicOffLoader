@@ -67,6 +67,15 @@ add_test(
             --config ${CMAKE_SOURCE_DIR}/policies/examples/adaptive.dsl.yaml
 )
 
+add_test(
+    NAME policy_dsl_stage_match_test
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tools/cli/tests/policy_dsl_stage_match_test.py
+            --cli $<TARGET_FILE:nicloadoff_cli>
+            --profile ${CMAKE_SOURCE_DIR}/profiles/bf2_default.yaml
+            --workload ${CMAKE_SOURCE_DIR}/workloads/tests/policy_queue_flip.yaml
+)
+
 add_custom_target(
     policy_analysis
     COMMAND ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/run_analysis.sh
