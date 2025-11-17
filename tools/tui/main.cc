@@ -19,6 +19,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <map>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -346,6 +347,7 @@ struct SimulationSnapshot {
     std::vector<BasicScheduler::TaskStatus> task_statuses;
     std::vector<TaskId> completed_tasks;
     std::vector<Resource> resources;
+    std::map<TaskId, std::string> task_stage_labels;
     Duration total_queue_time{0.0};
     Duration total_service_time{0.0};
     Duration host_service_time{0.0};
@@ -378,14 +380,18 @@ class SimulationSession {
   public:
     SimulationSession(config::Profile profile,
                       WorkloadSpec workload,
+                      std::map<std::string, std::string> metadata,
                       std::uint64_t seed,
                       std::unique_ptr<policy::PolicyHook> policy = nullptr)
         : profile_(std::move(profile)),
           workload_(std::move(workload)),
           policy_hook_(std::move(policy)),
-          seed_(seed) {
+          seed_(seed),
+          metadata_(std::move(metadata)) {
         reset(seed_);
     }
+
+    void set_metadata(std::map<std::string, std::string> metadata) { metadata_ = std::move(metadata); }
 
     void reset(std::uint64_t new_seed) {
         seed_ = new_seed;
@@ -398,6 +404,7 @@ class SimulationSession {
         if (policy_hook_) {
             scheduler_->set_policy_hook(policy_hook_.get());
         }
+        scheduler_->set_policy_metadata(metadata_);
         for (const auto& task : tasks) {
             scheduler_->submit_task(task);
         }
@@ -449,6 +456,11 @@ class SimulationSession {
             snapshot.nic_service_time = aggregate.nic_service_time;
             snapshot.active_task_count = policy_snapshot.active_task_count;
             snapshot.admission_limit = policy_snapshot.admission_limit;
+            for (const auto& task_state : policy_snapshot.tasks) {
+                if (!task_state.stage_label.empty()) {
+                    snapshot.task_stage_labels.emplace(task_state.id, task_state.stage_label);
+                }
+            }
             snapshot.finished = finished_;
             snapshot.policy_waiting_reorders = policy_snapshot.run_metrics.policy.waiting_reorders;
             snapshot.policy_waiting_reorders_per_task = policy_snapshot.run_metrics.policy.waiting_reorders_per_task;
@@ -500,6 +512,7 @@ class SimulationSession {
     std::vector<std::string> event_log_;
     std::size_t max_event_log_{64};
     std::uint64_t seed_{1};
+    std::map<std::string, std::string> metadata_;
     bool finished_{false};
 };
 
@@ -509,7 +522,10 @@ struct AppState {
     std::vector<WorkloadPreset> workloads;
     std::vector<std::string> workload_names;
     std::vector<PolicyChoice> policy_entries;
+    std::map<std::string, std::string> metadata;
     std::vector<std::string> load_errors;
+    std::vector<std::string> arrival_labels{"steady", "burst"};
+    int arrival_label_index{0};
 
     int profile_index{0};
     int workload_index{0};
@@ -564,6 +580,14 @@ struct AppState {
             workload_description += "\n\nSource: " + preset.source_path->string();
         }
 
+        metadata.clear();
+        metadata.emplace("workload_label", preset.name);
+        if (!arrival_labels.empty()) {
+            arrival_label_index =
+                std::clamp(arrival_label_index, 0, static_cast<int>(arrival_labels.size()) - 1);
+            metadata.emplace("arrival_label", arrival_labels[arrival_label_index]);
+        }
+
         WorkloadSpec spec = apply_service_modes(preset.spec);
         std::uint64_t seed_to_use = session && preserve_seed ? session->seed() : next_seed;
 
@@ -591,7 +615,8 @@ struct AppState {
         }
 
         try {
-            session = std::make_unique<SimulationSession>(profile, std::move(spec), seed_to_use, std::move(policy_hook));
+            session = std::make_unique<SimulationSession>(
+                profile, std::move(spec), metadata, seed_to_use, std::move(policy_hook));
         } catch (const std::exception& ex) {
             status_message = std::string("Failed to initialise simulation: ") + ex.what();
             session.reset();
@@ -864,6 +889,7 @@ void draw_instructions(WINDOW* win, int start_row) {
         "  r     Reset (new seed)",
         "  H     Toggle host service mode",
         "  N     Toggle NIC service mode",
+        "  m     Cycle arrival_label metadata",
         "  p/P   Cycle policy hook (built-ins + DSL configs under policies/examples/)",
         "  s     Save metrics to JSON",
         "  q     Quit",
@@ -951,6 +977,12 @@ void draw_right_panel(WINDOW* win, const AppState& state, const SimulationSnapsh
     if (policy_path) {
         print_line("    DSL config: " + policy_path->string());
     }
+    if (!state.metadata.empty()) {
+        print_line("  Scenario metadata:");
+        for (const auto& [key, value] : state.metadata) {
+            print_line("    " + key + ": " + value);
+        }
+    }
     if (snapshot.admission_limit) {
         print_line("    Active tasks: " + std::to_string(snapshot.active_task_count) + " / " +
                    std::to_string(*snapshot.admission_limit));
@@ -1022,8 +1054,12 @@ void draw_right_panel(WINDOW* win, const AppState& state, const SimulationSnapsh
         }
         std::ostringstream oss;
         std::size_t stage_display = std::min(status.stage_index + 1, status.total_stages);
-        oss << "  Task " << status.id << " stage " << stage_display << "/" << status.total_stages << " "
-            << task_state_description(status, snapshot.waiting_tasks);
+        oss << "  Task " << status.id << " stage " << stage_display << "/" << status.total_stages;
+        auto label_it = snapshot.task_stage_labels.find(status.id);
+        if (label_it != snapshot.task_stage_labels.end()) {
+            oss << " [" << label_it->second << "]";
+        }
+        oss << " " << task_state_description(status, snapshot.waiting_tasks);
         print_line(oss.str());
     }
 
@@ -1191,6 +1227,17 @@ int main() {
                     state.status_message = std::string("NIC service mode will be ") +
                                             (state.nic_stochastic ? "stochastic" : "deterministic") +
                                             " on next load.";
+                }
+                break;
+            case 'm':
+            case 'M':
+                if (!state.arrival_labels.empty()) {
+                    state.arrival_label_index =
+                        (state.arrival_label_index + 1) % static_cast<int>(state.arrival_labels.size());
+                    if (state.load_selection(true)) {
+                        state.status_message = "Scenario arrival_label set to " +
+                                               state.arrival_labels[state.arrival_label_index] + ".";
+                    }
                 }
                 break;
             case 'p':

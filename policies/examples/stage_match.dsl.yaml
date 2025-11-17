@@ -1,0 +1,20 @@
+rules:
+  # When the reduce stage piles up, bias toward NIC-heavy variants.
+  - when:
+      metric: queue_avg
+      op: ">="
+      value: 1.0
+    match:
+      stage: reduce
+      metadata:
+        workload_label: skew_dag
+    action:
+      reorder: prefer-nic
+
+  # Clamp concurrency on bursty arrivals regardless of stage.
+  - match:
+      metadata:
+        arrival_label: burst
+    action:
+      admission:
+        max_active: 2

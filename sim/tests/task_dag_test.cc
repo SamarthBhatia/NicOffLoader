@@ -50,6 +50,11 @@ int main() {
             assert(dag.nodes[auth_index].successors[0] == serialize_index);
             assert(dag.nodes[lookup_index].successors.size() == 1);
             assert(dag.nodes[lookup_index].successors[0] == serialize_index);
+            assert(dag.nodes[parse_index].stage.label == "parse_req");
+            assert(dag.nodes[hash_index].stage.label == "hash_key");
+            assert(dag.nodes[auth_index].stage.label == "auth_check");
+            assert(dag.nodes[lookup_index].stage.label == "db_lookup");
+            assert(dag.nodes[serialize_index].stage.label == "serialize_resp");
             auto order = nicloadoff::topological_order(dag);
             assert(order.size() == dag.nodes.size());
             assert(order.front() == parse_index);
