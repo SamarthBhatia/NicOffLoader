@@ -88,6 +88,11 @@ def build_dsl(path: pathlib.Path) -> None:
                 "    action:",
                 "      admission:",
                 "        max_active: 1",
+                "  - match:",
+                "      metadata:",
+                "        arrival_label: steady",
+                "    action:",
+                "      reorder: prefer-host",
             ]
         )
     )
@@ -98,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cli", type=pathlib.Path, required=True)
     parser.add_argument("--profile", type=pathlib.Path, required=True)
     parser.add_argument("--workload", type=pathlib.Path, required=True)
+    parser.add_argument("--arrival-label", default="burst", choices=["burst", "steady"])
     args = parser.parse_args(argv)
 
     baseline = run_cli(args.cli, args.profile, args.workload)
@@ -108,6 +114,9 @@ def main(argv: list[str] | None = None) -> int:
         build_dsl(dsl_path)
         output_path = tmpdir_path / "stage_match.json"
         manifest = build_manifest(dsl_path, args.workload, args.profile, output_path)
+        # Toggle arrival_label to exercise both the stage-targeted reorder and the fallback.
+        manifest_text = manifest.read_text().replace("arrival_label: burst", f"arrival_label: {args.arrival_label}")
+        manifest.write_text(manifest_text)
         dsl_report = run_cli_with_manifest(args.cli, manifest)
 
     nic_task_base = queue_time(baseline, 202)

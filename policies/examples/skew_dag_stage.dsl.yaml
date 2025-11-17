@@ -1,0 +1,18 @@
+rules:
+  - match:
+      stage: db_lookup
+      metadata:
+        workload_label: skew_dag
+        arrival_label: burst
+    action:
+      reorder: prefer-nic
+  - match:
+      stage: serialize_resp
+    action:
+      reorder: prefer-host
+  - match:
+      metadata:
+        arrival_label: burst
+    action:
+      admission:
+        max_active: 2
