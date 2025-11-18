@@ -86,6 +86,16 @@ add_test(
             ${CMAKE_SOURCE_DIR}/policies/examples/skew_dag_stage_manifest.yaml
 )
 
+add_test(
+    NAME policy_dsl_stage_label_test
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tools/cli/tests/policy_dsl_stage_label_test.py
+            --cli $<TARGET_FILE:nicloadoff_cli>
+            --profile ${CMAKE_SOURCE_DIR}/profiles/bf2_default.yaml
+            --workload ${CMAKE_SOURCE_DIR}/workloads/tests/dsl_stage_wait.yaml
+            --config ${CMAKE_SOURCE_DIR}/policies/examples/stage_label_reorder.dsl.yaml
+)
+
 add_custom_target(
     policy_analysis
     COMMAND ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/run_analysis.sh

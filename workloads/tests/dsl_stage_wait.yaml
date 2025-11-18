@@ -1,0 +1,103 @@
+schema_version: 0.1
+workload_name: dsl_stage_wait
+description: >
+  Two DAG tasks that collide on host resources so a stage-aware DSL reorder
+  can swap the waiting queue (db is host-heavy in one task, NIC-heavy in the other).
+tasks:
+  - id: 1
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 0.0
+        demands:
+          - resource: host_cpu
+            units: 0.0
+  - id: 900
+    arrival_time: 0.0
+    dag:
+      nodes:
+        - name: db
+          stage:
+            deterministic_service_time: 10.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 14
+              - resource: nic_cpu
+                units: 1
+          successors:
+            - done
+        - name: done
+          stage:
+            deterministic_service_time: 0.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 0.1
+      entry_points:
+        - db
+  - id: 950
+    arrival_time: 0.0
+    dag:
+      nodes:
+        - name: db
+          stage:
+            deterministic_service_time: 10.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 10
+              - resource: nic_cpu
+                units: 6
+          successors:
+            - done
+        - name: done
+          stage:
+            deterministic_service_time: 0.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 0.1
+      entry_points:
+        - db
+  - id: 980
+    arrival_time: 0.0
+    dag:
+      nodes:
+        - name: db
+          stage:
+            deterministic_service_time: 10.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 13
+              - resource: nic_cpu
+                units: 1
+          successors:
+            - done
+        - name: done
+          stage:
+            deterministic_service_time: 0.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 0.1
+      entry_points:
+        - db

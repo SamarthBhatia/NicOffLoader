@@ -1,0 +1,8 @@
+rules:
+  - match:
+      stage: db
+    action:
+      reorder: prefer-nic
+  - action:
+      admission:
+        max_active: 1
