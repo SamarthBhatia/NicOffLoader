@@ -1,0 +1,41 @@
+schema_version: 0.1
+workload_name: rolling_spike_nic
+description: >
+  Deterministic NIC-saturation burst used to validate the rolling queue/utilization metrics.
+tasks:
+  - id: 401
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 40.0
+        demands:
+          - resource: host_cpu
+            units: 1
+          - resource: nic_cpu
+            units: 8
+  - id: 402
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 40.0
+        demands:
+          - resource: host_cpu
+            units: 1
+          - resource: nic_cpu
+            units: 8
+  - id: 403
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 40.0
+        demands:
+          - resource: host_cpu
+            units: 1
+          - resource: nic_cpu
+            units: 8
+  - id: 404
+    arrival_time: 80.0
+    stages:
+      - deterministic_service_time: 20.0
+        demands:
+          - resource: host_cpu
+            units: 1
+          - resource: nic_cpu
+            units: 8

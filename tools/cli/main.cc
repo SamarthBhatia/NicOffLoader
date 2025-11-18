@@ -31,10 +31,22 @@ int main(int argc, char** argv) {
     }
 
     try {
+        if (options.batch_mode) {
+            const auto batch_results = run_batch_manifest(options.batch_manifest_path);
+            std::cout << "Completed batch with " << batch_results.size() << " run(s)\n";
+            return 0;
+        }
         RunSummary summary = run_simulation(options);
         std::cout << "Completed " << summary.completed_tasks << " tasks in "
                   << format_value(summary.makespan_us) << " us\n";
         std::cout << "Throughput: " << format_value(summary.throughput_per_sec) << " tasks/s\n";
+        const auto& policy_metrics = summary.metrics.policy;
+        std::cout << "Policy waiting reorders: " << policy_metrics.waiting_reorders
+                  << " (per task " << format_value(policy_metrics.waiting_reorders_per_task, 6) << ")\n";
+        if (policy_metrics.waiting_reorder_recent_task_count > 0) {
+            std::cout << "Recent reorder rate (last " << policy_metrics.waiting_reorder_recent_task_count
+                      << " tasks): " << format_value(policy_metrics.waiting_reorders_per_task_recent, 6) << "\n";
+        }
         std::cout << "Report written to " << options.output_path << "\n";
         if (summary.metrics.aggregate.latency_stats.count > 0) {
             const auto& stats = summary.metrics.aggregate.latency_stats;

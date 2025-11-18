@@ -1,4 +1,5 @@
 #include "nicloadoff/basic_policy_hooks.hh"
+#include "nicloadoff/policy_dsl.hh"
 #include "nicloadoff/dag_submission_controller.hh"
 #include "nicloadoff/profile.hh"
 #include "nicloadoff/profile_resources.hh"
@@ -18,6 +19,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <map>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -33,6 +35,13 @@ struct WorkloadPreset {
     std::string description;
     WorkloadSpec spec;
     std::optional<std::filesystem::path> source_path;
+};
+
+struct PolicyChoice {
+    std::string id;
+    std::string display_name;
+    std::string description;
+    std::optional<std::filesystem::path> dsl_path;
 };
 
 [[nodiscard]] std::string resource_type_to_string(ResourceType type) {
@@ -123,6 +132,25 @@ struct WorkloadPreset {
             if (ext == ".yaml" || ext == ".yml") {
                 paths.push_back(entry.path());
             }
+        }
+    }
+    std::sort(paths.begin(), paths.end());
+    return paths;
+}
+
+[[nodiscard]] std::vector<std::filesystem::path> discover_policy_configs(const std::filesystem::path& root) {
+    std::vector<std::filesystem::path> paths;
+    if (!std::filesystem::exists(root)) {
+        return paths;
+    }
+    for (const auto& entry : std::filesystem::directory_iterator(root)) {
+        if (!entry.is_regular_file()) {
+            continue;
+        }
+        auto ext = entry.path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+        if (ext == ".yaml" || ext == ".yml") {
+            paths.push_back(entry.path());
         }
     }
     std::sort(paths.begin(), paths.end());
@@ -238,6 +266,53 @@ struct WorkloadPreset {
     return presets;
 }
 
+std::string infer_arrival_label(const WorkloadPreset& preset, const std::vector<std::string>& labels) {
+    if (labels.empty()) {
+        return "steady";
+    }
+    std::string name = preset.name;
+    if (preset.source_path) {
+        name = preset.source_path->stem().string();
+    }
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (name.find("burst") != std::string::npos || name.find("spike") != std::string::npos) {
+        if (std::find(labels.begin(), labels.end(), "burst") != labels.end()) {
+            return "burst";
+        }
+    }
+    return labels.front();
+}
+
+[[nodiscard]] std::vector<PolicyChoice> build_policy_choices() {
+    std::vector<PolicyChoice> choices;
+    for (const auto& info : policy::builtin_policies()) {
+        choices.push_back(PolicyChoice{
+            .id = info.id,
+            .display_name = info.display_name,
+            .description = info.description,
+            .dsl_path = std::nullopt,
+        });
+    }
+    const std::filesystem::path examples_root = std::filesystem::current_path() / "policies" / "examples";
+    for (const auto& path : discover_policy_configs(examples_root)) {
+        PolicyChoice choice;
+        choice.id = "dsl";
+        choice.display_name = "DSL: " + path.stem().string();
+        choice.description = "DSL policy loaded from " + path.string();
+        choice.dsl_path = std::filesystem::absolute(path);
+        choices.push_back(std::move(choice));
+    }
+    if (choices.empty()) {
+        choices.push_back(PolicyChoice{
+            .id = "none",
+            .display_name = "No policy",
+            .description = "No policy loaded.",
+            .dsl_path = std::nullopt,
+        });
+    }
+    return choices;
+}
+
 std::vector<WorkloadPreset> load_workloads_from_directory(const std::filesystem::path& dir,
                                                           std::vector<std::string>& errors) {
     std::vector<WorkloadPreset> presets;
@@ -289,6 +364,7 @@ struct SimulationSnapshot {
     std::vector<BasicScheduler::TaskStatus> task_statuses;
     std::vector<TaskId> completed_tasks;
     std::vector<Resource> resources;
+    std::map<TaskId, std::string> task_stage_labels;
     Duration total_queue_time{0.0};
     Duration total_service_time{0.0};
     Duration host_service_time{0.0};
@@ -296,20 +372,43 @@ struct SimulationSnapshot {
     std::size_t active_task_count{0};
     std::optional<std::size_t> admission_limit;
     bool finished{false};
+    std::size_t policy_waiting_reorders{0};
+    double policy_waiting_reorders_per_task{0.0};
+    std::size_t policy_waiting_reorders_recent{0};
+    std::size_t policy_waiting_reorder_recent_task_count{0};
+    double policy_waiting_reorders_per_task_recent{0.0};
+    std::size_t rolling_queue_samples{0};
+    double rolling_queue_latest{0.0};
+    double rolling_queue_average{0.0};
+    double rolling_queue_peak{0.0};
+    std::size_t rolling_host_util_samples{0};
+    double rolling_host_util_average{0.0};
+    double rolling_host_util_peak{0.0};
+    std::size_t rolling_nic_util_samples{0};
+    double rolling_nic_util_average{0.0};
+    double rolling_nic_util_peak{0.0};
+    std::size_t rolling_sojourn_samples{0};
+    double rolling_sojourn_mean_latency{0.0};
+    double rolling_sojourn_p95{0.0};
+    double rolling_sojourn_p99{0.0};
 };
 
 class SimulationSession {
   public:
     SimulationSession(config::Profile profile,
                       WorkloadSpec workload,
+                      std::map<std::string, std::string> metadata,
                       std::uint64_t seed,
                       std::unique_ptr<policy::PolicyHook> policy = nullptr)
         : profile_(std::move(profile)),
           workload_(std::move(workload)),
           policy_hook_(std::move(policy)),
-          seed_(seed) {
+          seed_(seed),
+          metadata_(std::move(metadata)) {
         reset(seed_);
     }
+
+    void set_metadata(std::map<std::string, std::string> metadata) { metadata_ = std::move(metadata); }
 
     void reset(std::uint64_t new_seed) {
         seed_ = new_seed;
@@ -322,6 +421,7 @@ class SimulationSession {
         if (policy_hook_) {
             scheduler_->set_policy_hook(policy_hook_.get());
         }
+        scheduler_->set_policy_metadata(metadata_);
         for (const auto& task : tasks) {
             scheduler_->submit_task(task);
         }
@@ -373,7 +473,34 @@ class SimulationSession {
             snapshot.nic_service_time = aggregate.nic_service_time;
             snapshot.active_task_count = policy_snapshot.active_task_count;
             snapshot.admission_limit = policy_snapshot.admission_limit;
+            for (const auto& task_state : policy_snapshot.tasks) {
+                if (!task_state.stage_label.empty()) {
+                    snapshot.task_stage_labels.emplace(task_state.id, task_state.stage_label);
+                }
+            }
             snapshot.finished = finished_;
+            snapshot.policy_waiting_reorders = policy_snapshot.run_metrics.policy.waiting_reorders;
+            snapshot.policy_waiting_reorders_per_task = policy_snapshot.run_metrics.policy.waiting_reorders_per_task;
+            snapshot.policy_waiting_reorders_recent = policy_snapshot.run_metrics.policy.waiting_reorders_recent;
+            snapshot.policy_waiting_reorder_recent_task_count =
+                policy_snapshot.run_metrics.policy.waiting_reorder_recent_task_count;
+            snapshot.policy_waiting_reorders_per_task_recent =
+                policy_snapshot.run_metrics.policy.waiting_reorders_per_task_recent;
+            const auto& rolling = policy_snapshot.rolling_metrics;
+            snapshot.rolling_queue_samples = rolling.waiting_queue_depth.samples;
+            snapshot.rolling_queue_latest = rolling.waiting_queue_depth.latest;
+            snapshot.rolling_queue_average = rolling.waiting_queue_depth.average;
+            snapshot.rolling_queue_peak = rolling.waiting_queue_depth.peak;
+            snapshot.rolling_host_util_samples = rolling.host_utilization.samples;
+            snapshot.rolling_host_util_average = rolling.host_utilization.average;
+            snapshot.rolling_host_util_peak = rolling.host_utilization.peak;
+            snapshot.rolling_nic_util_samples = rolling.nic_utilization.samples;
+            snapshot.rolling_nic_util_average = rolling.nic_utilization.average;
+            snapshot.rolling_nic_util_peak = rolling.nic_utilization.peak;
+            snapshot.rolling_sojourn_samples = rolling.sojourn.samples;
+            snapshot.rolling_sojourn_mean_latency = rolling.sojourn.mean_latency;
+            snapshot.rolling_sojourn_p95 = rolling.sojourn.p95_latency;
+            snapshot.rolling_sojourn_p99 = rolling.sojourn.p99_latency;
         } else {
             snapshot.finished = true;
         }
@@ -402,6 +529,7 @@ class SimulationSession {
     std::vector<std::string> event_log_;
     std::size_t max_event_log_{64};
     std::uint64_t seed_{1};
+    std::map<std::string, std::string> metadata_;
     bool finished_{false};
 };
 
@@ -410,8 +538,11 @@ struct AppState {
     std::vector<std::string> profile_names;
     std::vector<WorkloadPreset> workloads;
     std::vector<std::string> workload_names;
-    std::vector<policy::BuiltinPolicyInfo> policy_entries;
+    std::vector<PolicyChoice> policy_entries;
+    std::map<std::string, std::string> metadata;
     std::vector<std::string> load_errors;
+    std::vector<std::string> arrival_labels{"steady", "burst"};
+    int arrival_label_index{0};
 
     int profile_index{0};
     int workload_index{0};
@@ -466,29 +597,65 @@ struct AppState {
             workload_description += "\n\nSource: " + preset.source_path->string();
         }
 
+        if (!preserve_seed) {
+            const std::string label = infer_arrival_label(preset, arrival_labels);
+            auto it = std::find(arrival_labels.begin(), arrival_labels.end(), label);
+            if (it != arrival_labels.end()) {
+                arrival_label_index = static_cast<int>(std::distance(arrival_labels.begin(), it));
+            } else {
+                arrival_label_index = 0;
+            }
+        }
+
+        metadata.clear();
+        metadata.emplace("workload_label", preset.name);
+        if (!arrival_labels.empty()) {
+            arrival_label_index =
+                std::clamp(arrival_label_index, 0, static_cast<int>(arrival_labels.size()) - 1);
+            metadata.emplace("arrival_label", arrival_labels[arrival_label_index]);
+        }
+
         WorkloadSpec spec = apply_service_modes(preset.spec);
         std::uint64_t seed_to_use = session && preserve_seed ? session->seed() : next_seed;
 
         std::string policy_id = "none";
+        std::optional<std::filesystem::path> policy_config;
+        std::string policy_label = "none";
         if (!policy_entries.empty()) {
             policy_index = std::clamp(policy_index, 0, static_cast<int>(policy_entries.size()) - 1);
-            policy_id = policy_entries[policy_index].id;
+            const auto& choice = policy_entries[policy_index];
+            policy_id = choice.id;
+            policy_label = choice.display_name;
+            policy_config = choice.dsl_path;
         }
-        auto policy_hook = policy::make_policy_hook(policy_id);
+        std::unique_ptr<policy::PolicyHook> policy_hook;
+        try {
+            if (policy_config) {
+                policy_hook = policy::dsl::load_program_from_file(*policy_config);
+            } else {
+                policy_hook = policy::make_policy_hook(policy_id);
+            }
+        } catch (const std::exception& ex) {
+            status_message = std::string("Failed to load policy: ") + ex.what();
+            session.reset();
+            return false;
+        }
 
         try {
-            session = std::make_unique<SimulationSession>(profile, std::move(spec), seed_to_use, std::move(policy_hook));
+            session = std::make_unique<SimulationSession>(
+                profile, std::move(spec), metadata, seed_to_use, std::move(policy_hook));
         } catch (const std::exception& ex) {
             status_message = std::string("Failed to initialise simulation: ") + ex.what();
             session.reset();
             return false;
         }
 
-        std::string policy_label = "none";
-        if (!policy_entries.empty()) {
-            policy_label = policy_entries[policy_index].display_name;
+        std::string policy_suffix;
+        if (!policy_entries.empty() && policy_entries[policy_index].dsl_path) {
+            policy_suffix = " [" + policy_entries[policy_index].dsl_path->filename().string() + "]";
         }
-        status_message = "Loaded profile and workload (policy: " + policy_label + "). Press space to run or 'n' to step.";
+        status_message =
+            "Loaded profile and workload (policy: " + policy_label + policy_suffix + "). Press space to run or 'n' to step.";
         if (!load_errors.empty()) {
             status_message += " (" + std::to_string(load_errors.size()) + " loader warning";
             if (load_errors.size() > 1) {
@@ -655,6 +822,34 @@ bool write_metrics_report(const SimulationSession& session,
     out << "    \"events_processed\": " << snapshot.events_processed << ",\n";
     out << "    \"completed_tasks\": " << run_metrics.tasks.size() << "\n";
     out << "  },\n";
+    out << "  \"policy_metrics\": {\n";
+    out << "    \"waiting_reorders\": " << run_metrics.policy.waiting_reorders << ",\n";
+    out << "    \"waiting_reorders_per_task\": " << format_double(run_metrics.policy.waiting_reorders_per_task, 6) << "\n";
+    out << "  },\n";
+    out << "  \"rolling_metrics\": {\n";
+    out << "    \"queue\": {\n";
+    out << "      \"samples\": " << snapshot.rolling_queue_samples << ",\n";
+    out << "      \"latest\": " << format_double(snapshot.rolling_queue_latest, 6) << ",\n";
+    out << "      \"average\": " << format_double(snapshot.rolling_queue_average, 6) << ",\n";
+    out << "      \"peak\": " << format_double(snapshot.rolling_queue_peak, 6) << "\n";
+    out << "    },\n";
+    out << "    \"host_util\": {\n";
+    out << "      \"samples\": " << snapshot.rolling_host_util_samples << ",\n";
+    out << "      \"average\": " << format_double(snapshot.rolling_host_util_average, 6) << ",\n";
+    out << "      \"peak\": " << format_double(snapshot.rolling_host_util_peak, 6) << "\n";
+    out << "    },\n";
+    out << "    \"nic_util\": {\n";
+    out << "      \"samples\": " << snapshot.rolling_nic_util_samples << ",\n";
+    out << "      \"average\": " << format_double(snapshot.rolling_nic_util_average, 6) << ",\n";
+    out << "      \"peak\": " << format_double(snapshot.rolling_nic_util_peak, 6) << "\n";
+    out << "    },\n";
+    out << "    \"sojourn\": {\n";
+    out << "      \"samples\": " << snapshot.rolling_sojourn_samples << ",\n";
+    out << "      \"mean_us\": " << format_double(snapshot.rolling_sojourn_mean_latency, 6) << ",\n";
+    out << "      \"p95_us\": " << format_double(snapshot.rolling_sojourn_p95, 6) << ",\n";
+    out << "      \"p99_us\": " << format_double(snapshot.rolling_sojourn_p99, 6) << "\n";
+    out << "    }\n";
+    out << "  },\n";
 
     out << "  \"tasks\": [\n";
     const auto& task_timings = run_metrics.tasks;
@@ -721,7 +916,8 @@ void draw_instructions(WINDOW* win, int start_row) {
         "  r     Reset (new seed)",
         "  H     Toggle host service mode",
         "  N     Toggle NIC service mode",
-        "  p     Cycle policy hook",
+        "  m     Cycle arrival_label metadata",
+        "  p/P   Cycle policy hook (built-ins + DSL configs under policies/examples/)",
         "  s     Save metrics to JSON",
         "  q     Quit",
     };
@@ -798,10 +994,22 @@ void draw_right_panel(WINDOW* win, const AppState& state, const SimulationSnapsh
                (state.host_stochastic ? "stochastic" : "deterministic"));
     print_line(std::string("  NIC service mode: ") +
                (state.nic_stochastic ? "stochastic" : "deterministic"));
-    std::string policy_label = state.policy_entries.empty()
-                                   ? std::string("None")
-                                   : state.policy_entries[state.policy_index].display_name;
+    std::string policy_label = "None";
+    std::optional<std::filesystem::path> policy_path;
+    if (!state.policy_entries.empty()) {
+        policy_label = state.policy_entries[state.policy_index].display_name;
+        policy_path = state.policy_entries[state.policy_index].dsl_path;
+    }
     print_line("  Policy: " + policy_label);
+    if (policy_path) {
+        print_line("    DSL config: " + policy_path->string());
+    }
+    if (!state.metadata.empty()) {
+        print_line("  Scenario metadata:");
+        for (const auto& [key, value] : state.metadata) {
+            print_line("    " + key + ": " + value);
+        }
+    }
     if (snapshot.admission_limit) {
         print_line("    Active tasks: " + std::to_string(snapshot.active_task_count) + " / " +
                    std::to_string(*snapshot.admission_limit));
@@ -813,6 +1021,26 @@ void draw_right_panel(WINDOW* win, const AppState& state, const SimulationSnapsh
     print_line("    Host service: " + format_double(snapshot.host_service_time, 3) + " us");
     print_line("    NIC service:  " + format_double(snapshot.nic_service_time, 3) + " us");
     print_line("  Completed tasks: " + std::to_string(snapshot.completed_tasks.size()));
+    print_line("  Policy waiting reorders: " + std::to_string(snapshot.policy_waiting_reorders) +
+               " (per task " + format_double(snapshot.policy_waiting_reorders_per_task, 4) + ")");
+    if (snapshot.policy_waiting_reorder_recent_task_count > 0) {
+        print_line("    Recent (" + std::to_string(snapshot.policy_waiting_reorder_recent_task_count) +
+                   " tasks): " + format_double(snapshot.policy_waiting_reorders_per_task_recent, 4));
+    }
+    if (snapshot.rolling_queue_samples > 0) {
+        print_line("  Rolling queue avg: " + format_double(snapshot.rolling_queue_average, 3) + " (peak " +
+                   format_double(snapshot.rolling_queue_peak, 3) + ", latest " +
+                   format_double(snapshot.rolling_queue_latest, 3) + ")");
+    }
+    if (snapshot.rolling_host_util_samples > 0) {
+        print_line("  Rolling util avg (host/nic): " + format_double(snapshot.rolling_host_util_average, 3) + " / " +
+                   format_double(snapshot.rolling_nic_util_average, 3));
+    }
+    if (snapshot.rolling_sojourn_samples > 0) {
+        print_line("  Rolling sojourn mean/p95/p99 (us): " + format_double(snapshot.rolling_sojourn_mean_latency, 3) +
+                   " / " + format_double(snapshot.rolling_sojourn_p95, 3) + " / " +
+                   format_double(snapshot.rolling_sojourn_p99, 3));
+    }
 
     if (!state.status_message.empty()) {
         print_line("  Message: " + state.status_message);
@@ -853,8 +1081,12 @@ void draw_right_panel(WINDOW* win, const AppState& state, const SimulationSnapsh
         }
         std::ostringstream oss;
         std::size_t stage_display = std::min(status.stage_index + 1, status.total_stages);
-        oss << "  Task " << status.id << " stage " << stage_display << "/" << status.total_stages << " "
-            << task_state_description(status, snapshot.waiting_tasks);
+        oss << "  Task " << status.id << " stage " << stage_display << "/" << status.total_stages;
+        auto label_it = snapshot.task_stage_labels.find(status.id);
+        if (label_it != snapshot.task_stage_labels.end()) {
+            oss << " [" << label_it->second << "]";
+        }
+        oss << " " << task_state_description(status, snapshot.waiting_tasks);
         print_line(oss.str());
     }
 
@@ -896,7 +1128,7 @@ int main() {
     using namespace std::chrono;
 
     AppState state;
-    state.policy_entries = nicloadoff::policy::builtin_policies();
+    state.policy_entries = build_policy_choices();
     state.profile_paths = discover_profiles("profiles");
     state.workloads = build_presets();
 
@@ -1022,6 +1254,17 @@ int main() {
                     state.status_message = std::string("NIC service mode will be ") +
                                             (state.nic_stochastic ? "stochastic" : "deterministic") +
                                             " on next load.";
+                }
+                break;
+            case 'm':
+            case 'M':
+                if (!state.arrival_labels.empty()) {
+                    state.arrival_label_index =
+                        (state.arrival_label_index + 1) % static_cast<int>(state.arrival_labels.size());
+                    if (state.load_selection(true)) {
+                        state.status_message = "Scenario arrival_label set to " +
+                                               state.arrival_labels[state.arrival_label_index] + ".";
+                    }
                 }
                 break;
             case 'p':

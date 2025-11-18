@@ -2,11 +2,14 @@
 #define NICLOADOFF_POLICY_STATE_HH
 
 #include "nicloadoff/resource.hh"
+#include "nicloadoff/rolling_metrics_types.hh"
 #include "nicloadoff/run_metrics_types.hh"
 #include "nicloadoff/sim_types.hh"
 
 #include <cstddef>
+#include <map>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace nicloadoff {
@@ -22,6 +25,7 @@ struct PolicyTaskState {
     TaskId id{};
     std::size_t stage_index{0};
     std::size_t total_stages{0};
+    std::string stage_label;
     bool active{false};
     bool waiting{false};
     bool completed{false};
@@ -40,11 +44,13 @@ struct PolicyStateSnapshot {
     SimTime current_time{0.0};
     PolicyQueuesState queues{};
     RunMetrics run_metrics{};
+    PolicyRollingMetrics rolling_metrics{};
     std::vector<PolicyResourceState> resources;
     std::vector<PolicyTaskState> tasks;
     std::vector<TaskId> waiting_task_order;
     std::size_t active_task_count{0};
     std::optional<std::size_t> admission_limit;
+    std::map<std::string, std::string> scenario_metadata;
 };
 
 } // namespace nicloadoff

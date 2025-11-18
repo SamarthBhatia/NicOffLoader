@@ -26,6 +26,7 @@ struct TaskRequirement {
 };
 
 struct TaskStage {
+    std::string label;
     Duration service_time{0.0};
     std::optional<ServiceTimeProfileRef> service_profile;
     std::vector<TaskRequirement> requirements;

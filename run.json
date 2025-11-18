@@ -1,0 +1,95 @@
+{
+  "profile": {
+    "path": "profiles/bf2_default.yaml",
+    "name": "bf2_default",
+    "schema_version": "0.1"
+  },
+  "workload": {
+    "path": "workloads/examples/sequential_host.yaml",
+    "schema_version": "0.1",
+    "name": "sequential_host",
+    "description": "Two host-bound tasks arriving one microsecond apart; showcases queueing and sequential execution."
+  },
+  "seed": 1,
+  "service_modes": {
+    "host": "deterministic",
+    "nic": "deterministic"
+  },
+  "metadata": {},
+  "run": {
+    "start_time_us": 0.000000,
+    "finish_time_us": 5.000000,
+    "makespan_us": 5.000000,
+    "events_processed": 8,
+    "completed_tasks": 2,
+    "throughput_tasks_per_sec": 400000.000000
+  },
+  "aggregates": {
+    "queue_time_us": 0.000000,
+    "service_time_us": 8.000000,
+    "latency_time_us": 8.000000,
+    "host_service_time_us": 0.000000,
+    "nic_service_time_us": 0.000000,
+    "latency_stats": {
+      "mean_us": 4.000000,
+      "p50_us": 4.000000,
+      "p95_us": 4.900000,
+      "p99_us": 4.980000,
+      "min_us": 3.000000,
+      "max_us": 5.000000
+    }
+  },
+  "policy_metrics": {
+    "waiting_reorders": 0,
+    "waiting_reorders_per_task": 0.000000,
+    "waiting_reorders_recent": 0,
+    "waiting_reorder_recent_task_count": 2,
+    "waiting_reorders_per_task_recent": 0.000000
+  },
+  "rolling_metrics": {
+    "waiting_queue_depth": {
+      "samples": 1,
+      "latest": 0.000000,
+      "average": 0.000000,
+      "peak": 0.000000
+    },
+    "host_utilization": {
+      "samples": 5,
+      "latest": 0.000000,
+      "average": 0.025000,
+      "peak": 0.062500
+    },
+    "nic_utilization": {
+      "samples": 5,
+      "latest": 0.000000,
+      "average": 0.000000,
+      "peak": 0.000000
+    },
+    "sojourn": {
+      "samples": 2,
+      "mean_queue_time_us": 0.000000,
+      "mean_service_time_us": 4.000000,
+      "mean_latency_us": 4.000000,
+      "p95_latency_us": 4.900000,
+      "p99_latency_us": 4.980000
+    }
+  },
+  "tasks": [
+    {
+      "task_id": 2,
+      "queue_time_us": 0.000000,
+      "service_time_us": 3.000000,
+      "latency_us": 3.000000,
+      "host_service_time_us": 0.000000,
+      "nic_service_time_us": 0.000000
+    },
+    {
+      "task_id": 1,
+      "queue_time_us": 0.000000,
+      "service_time_us": 5.000000,
+      "latency_us": 5.000000,
+      "host_service_time_us": 0.000000,
+      "nic_service_time_us": 0.000000
+    }
+  ]
+}

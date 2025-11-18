@@ -17,8 +17,6 @@ Primary planning artifacts live in `scope.md` (goals, success criteria) and `sta
 - `profiles/` — hardware parameter files (e.g., BlueField-2).
 - `experiments/` — experiment manifests, run logs, and results.
 - `plots/` — analysis scripts and generated figures.
-- `thesis/` — writing assets for the final report.
-- `AGENTS.md` — contributor quickstart and workflow notes.
 - `scope.md` — Phase 0 scope and success criteria.
 - `status.md` — rolling project status (Done / Next / Remaining).
 
@@ -72,6 +70,19 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
 cmake --build build
 ```
 
+### Quick TUI Run (recommended for first-time verification)
+1. Build as above (`cmake --build build`).
+2. Launch the TUI:
+   ```bash
+   ./build/tools/tui/nicloadoff_tui
+   ```
+3. Pick a profile/workload (use arrow keys + Tab to move between lists), press Enter to load, then Space to start. Cycle policies with `p` (built-ins plus DSL configs discovered under `policies/examples/`).
+
+TUI controls (always visible on the left panel):
+- `↑/↓` navigate, `Tab` swap menu, `Enter` load, `Space` run/pause, `n` step once, `r` reset seed
+- `H`/`N` toggle host/NIC stochastic modes; `m` cycles the `arrival_label` metadata sent to DSL policies
+- `p` cycles policies; `s` saves the current metrics report; `q` quits
+
 ### Run Tests
 ```bash
 ctest --test-dir build
@@ -101,7 +112,35 @@ Once you have a profile and workload YAML ready, invoke the single-run CLI and o
   --output run.json
 ```
 
-Available policy identifiers match the TUI presets: `none`, `descending-id`, `limit-active-1`, `prefer-host`, and `prefer-nic`.
+Available policy identifiers match the TUI presets: `none`, `descending-id`, `limit-active-1`, `prefer-host`, `prefer-nic`, and the new `prefer-adaptive`, which leans toward NIC-heavy tasks whenever the rolling queue/utilization windows show the host saturating (and swings back toward host-heavy work once NIC contention dominates).
+
+Rolling metrics now drive policy decisions as well, so you can tune the look-back windows directly from the CLI:
+
+```bash
+  --rolling-queue-window-us <µs>    # horizon for the waiting-queue average/peak (default 50_000)
+  --rolling-util-window-us <µs>     # horizon for host/NIC utilization averages (default 50_000)
+  --rolling-sojourn-window-tasks <N>  # number of most recent tasks tracked in the sojourn stats (default 128)
+```
+
+Every batch/manifest entry also accepts a `rolling_windows:` block with `queue_us`, `util_us`, and/or `sojourn_tasks` keys if you prefer YAML-based overrides.
+
+#### DSL-driven policies
+
+The `dsl` policy id loads a YAML-based rule engine so you can author scheduling/admission heuristics without recompiling:
+
+```bash
+./build/tools/cli/nicloadoff_cli \
+  --profile profiles/bf2_default.yaml \
+  --workload workloads/tests/policy_queue_flip.yaml \
+  --policy dsl \
+  --policy-config policies/examples/adaptive.dsl.yaml
+```
+
+For a stage-aware DAG example, point the DSL at `policies/examples/stage_match.dsl.yaml` (with `workloads/examples/skew_dag.yaml`). A sample manifest (`policies/examples/stage_match_manifest.yaml`) pins the metadata used by the `match` block.
+For skewed DAGs, `policies/examples/skew_dag_stage.dsl.yaml` plus `policies/examples/skew_dag_stage_manifest.yaml` biases `db_lookup` toward NIC-heavy tasks under bursty arrivals, then swings back toward host-heavy response serialization and clamps admission during bursts.
+
+Each rule has an optional `when` condition, an optional `match` block, and an `action`. Conditions compare one of the rolling metrics (`queue_avg`, `host_util_avg`, `nic_util_avg`, `sojourn_mean_us`) against a threshold using `>`, `>=`, `<`, or `<=`. The `match` block can gate on scenario metadata (keys placed under `metadata:` in a manifest) and/or restrict a rule to a specific DAG stage via `stage: <name>` or `stage_index: <N>`; only waiting tasks that satisfy the stage predicate are reordered while other tasks keep their relative position. Rules are evaluated in order: the first rule that produces a waiting-order directive wins that field, and the first rule that produces an admission directive wins that field, so later rules can act as fallbacks for whichever directive is still unset. Actions currently support `reorder: prefer-host|prefer-nic` (mirroring the built-in skew policies) and `admission: { max_active: N }`. The sample config under `policies/examples/adaptive.dsl.yaml` biases toward NIC-heavy work when the host queue builds up, swings back toward host-heavy tasks when the NIC saturates, and relaxes the admission limit once queues drain. Batch manifests can set `policy_config: path/to/rules.yaml` alongside `policy: dsl`, and `defaults.policy_config` applies to every run unless overridden.
+Each run summary now prints the policy’s waiting-queue reorder count and normalized per-task ratio in addition to throughput/latency so you can confirm policy hooks are active without opening the JSON report.
 
 You can also supply defaults via a manifest:
 
@@ -112,12 +151,63 @@ workload: workloads/examples/sequential_host.yaml
 policy: prefer-host
 output: results/run_host.json
 seed: 7
+metadata:
+  workload_label: seq_host
+  arrival_label: deterministic
 service_modes:
   host: deterministic
   nic: stochastic
 ```
 
-Run it with `./build/tools/cli/nicloadoff_cli --config run_manifest.yaml`. Command-line flags still override manifest settings.
+Run it with `./build/tools/cli/nicloadoff_cli --config run_manifest.yaml`. Command-line flags still override manifest settings, and any `metadata:` entries are threaded into the JSON report (and batch CSVs) so experiment dashboards can join runs by scenario labels.
+
+### Batch CLI runs
+For policy sweeps, pass a batch manifest that lists multiple runs. Batch mode executes each entry,
+produces individual JSON reports, and optionally appends an aggregate CSV:
+
+```yaml
+# experiments/policy_baseline/batch.yaml
+defaults:
+  profile: profiles/bf2_default.yaml
+  workload: workloads/examples/kv_read_template.yaml
+  output_dir: experiments/policy_baseline/results
+  metadata:
+    workload_label: kv_read
+    arrival_model: periodic
+  service_modes:
+    host: deterministic
+    nic: deterministic
+csv: experiments/policy_baseline/results/policy_baseline.csv
+runs:
+  - name: prefer-host
+    policy: prefer-host
+  - name: prefer-nic
+    policy: prefer-nic
+  - name: dag-prefer-host
+    workload: workloads/examples/skew_dag.yaml
+    policy: prefer-host
+  - name: dag-prefer-nic
+    workload: workloads/examples/skew_dag.yaml
+    policy: prefer-nic
+```
+
+Invoke it with:
+
+```bash
+./build/tools/cli/nicloadoff_cli --batch experiments/policy_baseline/batch.yaml
+python3 experiments/policy_baseline/summarize.py
+python3 experiments/policy_baseline/export_normalized.py
+python3 plots/policy_baseline.py --csv experiments/policy_baseline/results/policy_baseline_normalized.csv
+```
+
+Each run inherits the defaults unless a field is overridden. The CSV header captures policy, seed,
+service modes, throughput, latency percentiles, the peak waiting-queue depth, and any metadata fields
+you define (e.g., `arrival_model`, `background_load`) so analysis scripts can ingest one table without
+re-parsing the JSON outputs. Use `experiments/policy_baseline/summarize.py` to dump a quick comparison
+table, `experiments/policy_baseline/export_normalized.py` to deduplicate rows and (optionally) emit a
+Parquet table, and `plots/policy_baseline.py` to render throughput/latency charts. See
+`experiments/policy_baseline/README.md`
+for more details.
 
 ### Launch the ncurses TUI
 The interactive TUI lets you inspect profiles, step through workloads, and experiment with policy hooks without leaving the terminal.
@@ -127,9 +217,9 @@ The interactive TUI lets you inspect profiles, step through workloads, and exper
    ```bash
    ./build/tools/tui/nicloadoff_tui
    ```
-3. Use the on-screen hints—`↑/↓` navigate menus, `Tab` swaps between profile/workload lists, `Space` toggles run/pause, `n` steps a single event, `H`/`N` toggle deterministic vs. stochastic sampling, `p` cycles built-in policies, `s` saves metrics, and `q` exits.
+3. Use the on-screen hints—`↑/↓` navigate menus, `Tab` swaps between profile/workload lists, `Space` toggles run/pause, `n` steps a single event, `H`/`N` toggle deterministic vs. stochastic sampling, `m` cycles the `arrival_label` metadata (handy for DSL matches), `p` cycles policies (built-ins plus any DSL configs discovered under `policies/examples/`), `s` saves metrics, and `q` exits.
 
-The status panel shows the active policy, admission limits (if any), and live queue/resource metrics derived from the scheduler’s policy snapshot.
+The status panel shows the active policy, admission limits (if any), live queue/resource metrics, and the cumulative policy waiting-reorder count + per-task ratio so you can watch hooks make progress while stepping through events. When a DSL config is selected, the panel also prints the YAML path to confirm which rule file is driving the run.
 
 ## Technology Stack (current plan)
 - C++20 for simulator and policy modules.
@@ -137,6 +227,6 @@ The status panel shows the active policy, admission limits (if any), and live qu
 - Python (matplotlib / seaborn) for data reduction and plotting.
 
 ## Contributing
-Please read `AGENTS.md` for guidelines on status tracking, coding style, and PR expectations. Update `status.md` after each work session to record progress and queue follow-up tasks.
+Update `status.md` after each work session to record progress and queue follow-up tasks.
 
 Format C++ and CMake sources with `clang-format` and `cmake-format` before pushing—the CI workflow enforces both.

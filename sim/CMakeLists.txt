@@ -4,16 +4,19 @@ set(SIM_SOURCES
     src/dag_runtime.cc
     src/resource.cc
     src/scheduler.cc
+    src/rolling_runtime_metrics.cc
     src/profile_resources.cc
     src/service_time_model.cc
     src/workload.cc
     src/workload_loader.cc
     src/profile_loader.cc
     src/run_metrics.cc
+    src/policy_dsl.cc
 )
 
 add_library(nicloadoff_sim STATIC ${SIM_SOURCES})
 target_include_directories(nicloadoff_sim PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(nicloadoff_sim PUBLIC cxx_std_20)
+target_link_libraries(nicloadoff_sim PUBLIC yaml-cpp::yaml-cpp)
 
 add_subdirectory(tests)

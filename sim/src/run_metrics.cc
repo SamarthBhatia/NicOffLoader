@@ -84,7 +84,26 @@ RunMetrics compute_run_metrics(const std::vector<BasicScheduler::TaskMetrics>& t
 }
 
 RunMetrics compute_run_metrics(const BasicScheduler& scheduler) {
-    return compute_run_metrics(scheduler.completed_metrics());
+    RunMetrics metrics = compute_run_metrics(scheduler.completed_metrics());
+    metrics.aggregate.peak_waiting_queue_depth = scheduler.peak_waiting_queue_depth();
+    metrics.policy.waiting_reorders = scheduler.policy_waiting_reorders();
+    const double task_count = static_cast<double>(metrics.tasks.size());
+    if (task_count > 0.0) {
+        metrics.policy.waiting_reorders_per_task = static_cast<double>(metrics.policy.waiting_reorders) / task_count;
+    } else {
+        metrics.policy.waiting_reorders_per_task = 0.0;
+    }
+    const std::size_t window = BasicScheduler::kPolicyWaitingReorderWindow;
+    metrics.policy.waiting_reorders_recent = scheduler.policy_waiting_reorders_recent(window);
+    metrics.policy.waiting_reorder_recent_task_count = std::min<std::size_t>(window, metrics.tasks.size());
+    if (metrics.policy.waiting_reorder_recent_task_count > 0) {
+        metrics.policy.waiting_reorders_per_task_recent =
+            static_cast<double>(metrics.policy.waiting_reorders_recent) /
+            static_cast<double>(metrics.policy.waiting_reorder_recent_task_count);
+    } else {
+        metrics.policy.waiting_reorders_per_task_recent = 0.0;
+    }
+    return metrics;
 }
 
 } // namespace nicloadoff

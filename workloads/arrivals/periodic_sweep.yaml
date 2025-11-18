@@ -1,0 +1,5 @@
+schema_version: 0.1
+arrival_model: periodic
+description: >
+  Periodic arrival fixture for static placement benchmark; sweeps inter-arrival between 1–5 us.
+periods_us: [1.0, 2.5, 5.0]

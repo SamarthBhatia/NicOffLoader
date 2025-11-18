@@ -103,6 +103,11 @@ std::string node_kind_to_string(YamlNode::Kind kind) {
     return "unknown";
 }
 
+[[nodiscard]] std::string to_lower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
 struct Token {
     enum class Kind { MapEntry, SequenceEntry };
 
@@ -463,6 +468,29 @@ StageSpec parse_stage(const YamlNode& node, const std::string& context) {
     for (std::size_t i = 0; i < demands_node.sequence.size(); ++i) {
         stage.demands.push_back(parse_demand(demands_node.sequence[i],
                                              context + ".demands[" + std::to_string(i) + "]"));
+    }
+    if (auto placement_default_node = get_optional(map, "placement_default")) {
+        stage.placement_default =
+            to_lower(parse_string(*placement_default_node, context + ".placement_default"));
+    }
+    if (auto eligible_node = get_optional(map, "placement_eligible")) {
+        const auto& seq = expect_sequence(*eligible_node, context + ".placement_eligible");
+        for (std::size_t i = 0; i < seq.sequence.size(); ++i) {
+            stage.placement_eligible.push_back(
+                to_lower(parse_string(seq.sequence[i],
+                                      context + ".placement_eligible[" + std::to_string(i) + "]")));
+        }
+    }
+    if (auto instructions_node = get_optional(map, "instructions")) {
+        stage.instructions =
+            parse_double(parse_string(*instructions_node, context + ".instructions"), context + ".instructions");
+    }
+    if (auto bytes_in_node = get_optional(map, "bytes_in")) {
+        stage.bytes_in = parse_double(parse_string(*bytes_in_node, context + ".bytes_in"), context + ".bytes_in");
+    }
+    if (auto bytes_out_node = get_optional(map, "bytes_out")) {
+        stage.bytes_out =
+            parse_double(parse_string(*bytes_out_node, context + ".bytes_out"), context + ".bytes_out");
     }
     return stage;
 }

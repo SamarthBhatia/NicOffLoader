@@ -1,0 +1,8 @@
+profile: /Users/samarthbhatia/Developer/Systems/NicLoadOff/profiles/bf2_default.yaml
+workload: /Users/samarthbhatia/Developer/Systems/NicLoadOff/workloads/examples/skew_dag.yaml
+policy: dsl
+policy_config: /Users/samarthbhatia/Developer/Systems/NicLoadOff/policies/examples/stage_match.dsl.yaml
+metadata:
+  workload_label: skew_dag
+  arrival_label: burst
+output: /tmp/nicloadoff_stage_match.json

@@ -1,6 +1,8 @@
 # Build artifacts
 /build*/
 .cmake-format/
+experiments/**/results/*
+!experiments/**/results/.gitkeep
 
 # Editor tooling
 .DS_Store

@@ -1,13 +1,17 @@
 #ifndef NICLOADOFF_TOOLS_CLI_RUNNER_HH
 #define NICLOADOFF_TOOLS_CLI_RUNNER_HH
 
+#include "nicloadoff/rolling_metrics_types.hh"
 #include "nicloadoff/run_metrics.hh"
 #include "nicloadoff/task.hh"
 
 #include <cstdint>
 #include <filesystem>
 #include <iosfwd>
+#include <map>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace nicloadoff::cli {
 
@@ -20,7 +24,14 @@ struct CliOptions {
     ServiceTimeMode host_mode{ServiceTimeMode::kDeterministic};
     ServiceTimeMode nic_mode{ServiceTimeMode::kDeterministic};
     std::string policy_id{"none"};
+    std::optional<std::filesystem::path> policy_config_path;
     bool show_help{false};
+    bool batch_mode{false};
+    std::filesystem::path batch_manifest_path;
+    std::map<std::string, std::string> metadata;
+    double rolling_queue_window_us{BasicScheduler::kRollingQueueWindowUs};
+    double rolling_util_window_us{BasicScheduler::kRollingUtilizationWindowUs};
+    std::size_t rolling_sojourn_window_tasks{BasicScheduler::kRollingSojournWindowTasks};
 };
 
 struct RunSummary {
@@ -28,11 +39,20 @@ struct RunSummary {
     Duration makespan_us{0.0};
     double throughput_per_sec{0.0};
     RunMetrics metrics;
+    PolicyRollingMetrics rolling_metrics;
 };
 
 void print_usage(std::ostream& out);
 bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& error);
 RunSummary run_simulation(const CliOptions& options);
+struct BatchRunSummary {
+    std::string name;
+    CliOptions options;
+    RunSummary summary;
+    std::map<std::string, std::string> metadata;
+};
+
+std::vector<BatchRunSummary> run_batch_manifest(const std::filesystem::path& manifest_path);
 
 } // namespace nicloadoff::cli
 

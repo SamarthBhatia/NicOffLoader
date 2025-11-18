@@ -1,0 +1,32 @@
+schema_version: 0.1
+workload_name: policy_queue_flip
+description: >
+  Two simultaneous tasks that still pressure host CPU without exceeding total capacity, plus a NIC-heavy task. Used to validate that prefer-nic style policies reorder the waiting queue when background load is heavy. Reduced host_cpu demand so placement baselines can run.
+tasks:
+  - id: 200
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 12.0
+        demands:
+          - resource: host_cpu
+            units: 16
+          - resource: nic_cpu
+            units: 1
+  - id: 201
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 12.0
+        demands:
+          - resource: host_cpu
+            units: 16
+          - resource: nic_cpu
+            units: 1
+  - id: 202
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 12.0
+        demands:
+          - resource: host_cpu
+            units: 16
+          - resource: nic_cpu
+            units: 8

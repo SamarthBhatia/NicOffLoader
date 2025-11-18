@@ -1,0 +1,97 @@
+schema_version: 0.1
+workload_name: skew_dag_heavy
+description: >
+  Heavier skew variant of the KV DAG workload where the db_lookup stage carries
+  80/20-style heavy-tail instructions/bytes to stress host↔NIC transfers.
+tasks:
+  - id: 901
+    arrival_time: 0.0
+    dag:
+      nodes:
+        - name: parse_req
+          stage:
+            deterministic_service_time: 0.8
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            instructions: 1.5e7
+            bytes_in: 2048
+            bytes_out: 1536
+            demands:
+              - resource: host_cpu
+                units: 0.6
+              - resource: host_dram
+                units: 0.2
+          successors:
+            - hash_key
+            - auth_check
+        - name: hash_key
+          stage:
+            deterministic_service_time: 1.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            instructions: 2.5e7
+            bytes_in: 1536
+            bytes_out: 512
+            demands:
+              - resource: host_cpu
+                units: 0.9
+          successors:
+            - db_lookup
+        - name: db_lookup
+          stage:
+            service_profile:
+              key: kv_lookup
+              domain: host
+              mode: stochastic
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            instructions: 1.2e8
+            bytes_in: 4096.0
+            bytes_out: 16384.0
+            demands:
+              - resource: host_cpu
+                units: 2.5
+              - resource: host_dram
+                units: 3.5
+              - resource: host_link
+                units: 16384.0
+          successors:
+            - serialize_resp
+        - name: auth_check
+          stage:
+            deterministic_service_time: 0.6
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            instructions: 5e6
+            bytes_in: 512
+            bytes_out: 512
+            demands:
+              - resource: host_cpu
+                units: 0.4
+          successors:
+            - serialize_resp
+        - name: serialize_resp
+          stage:
+            deterministic_service_time: 1.2
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            instructions: 1.5e7
+            bytes_in: 16384.0
+            bytes_out: 4096.0
+            demands:
+              - resource: host_cpu
+                units: 0.9
+              - resource: host_dram
+                units: 0.4
+      entry_points:
+        - parse_req

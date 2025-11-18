@@ -1,0 +1,448 @@
+{
+  "placement_manifest": {
+    "profile": "profiles/bf2_default.yaml",
+    "binary": "build/tools/placement/placement_benchmark",
+    "csv_path": "experiments/placement_baseline/results/placement_sweep.csv",
+    "results_dir": "experiments/placement_baseline/results",
+    "placement_modes": ["hint_respect"],
+    "static_workloads": [
+      {
+        "name": "kv_read_periodic",
+        "workload": "workloads/examples/kv_read_template.yaml",
+        "arrival": "workloads/arrivals/periodic_sweep.yaml",
+        "arrival_scales": [0.5, 1.0, 1.5, 2.0],
+        "seeds": [1],
+        "metadata": {
+          "arrival_label": "deterministic",
+          "zipf_alpha": "na"
+        }
+      },
+      {
+        "name": "tcp_split_poisson",
+        "workload": "workloads/examples/tcp_split_template.yaml",
+        "arrival": "workloads/arrivals/poisson_bursty.yaml",
+        "arrival_scales": [0.5, 1.0, 1.5],
+        "seeds": [1],
+        "metadata": {
+          "arrival_label": "poisson",
+          "zipf_alpha": "na"
+        }
+      }
+    ]
+  },
+  "policy_batch": {
+    "defaults": {
+      "profile": "../../profiles/bf2_default.yaml",
+      "workload": "../../workloads/examples/kv_read_template.yaml",
+      "output_dir": "./results",
+      "metadata": {
+        "workload_label": "kv_read",
+        "arrival_model": "periodic",
+        "background_load": "low",
+        "zipf_alpha": "na",
+        "arrival_label": "deterministic"
+      },
+      "service_modes": {
+        "host": "deterministic",
+        "nic": "deterministic"
+      },
+      "seed": 1
+    },
+    "csv": "./results/policy_baseline.csv",
+    "static_runs": [
+      {
+        "name": "prefer-host",
+        "policy": "prefer-host",
+        "metadata": {
+          "placement": "host"
+        }
+      },
+      {
+        "name": "prefer-nic",
+        "policy": "prefer-nic",
+        "metadata": {
+          "placement": "nic"
+        }
+      },
+      {
+        "name": "limit-active",
+        "policy": "limit-active-1",
+        "metadata": {
+          "placement": "host"
+        }
+      }
+    ]
+  },
+  "variants": [
+    {
+      "name": "skew_dag",
+      "task_id": 900,
+      "workload_name": "skew_dag",
+      "description": "Skinny–wide–skinny DAG modeling a KV read path with a skewed lookup stage.\nparse_req and hash_key fan into a dominant db_lookup node (skewable via\nservice_profile), while auth_check joins before serialize_resp to stress\ndependency pressure.",
+      "metadata": {
+        "workload_label": "skew_dag",
+        "arrival_model": "dag-burst",
+        "zipf_alpha": "1.0"
+      },
+      "batch_runs": [
+        {
+          "name": "dag-prefer-host",
+          "policy": "prefer-host",
+          "metadata": {
+            "placement": "host"
+          }
+        },
+        {
+          "name": "dag-prefer-nic",
+          "policy": "prefer-nic",
+          "metadata": {
+            "placement": "nic"
+          }
+        }
+      ],
+      "scenarios": [
+        {
+          "name": "baseline",
+          "arrival": "workloads/arrivals/poisson_bursty.yaml",
+          "arrival_scales": [1.0],
+          "seeds": [1],
+          "placement_modes": ["host_pinned", "nic_pinned"],
+          "metadata": {
+            "arrival_label": "baseline",
+            "background_load": "light"
+          }
+        },
+        {
+          "name": "stress",
+          "arrival": "workloads/arrivals/poisson_bursty.yaml",
+          "arrival_scales": [1.3],
+          "seeds": [1],
+          "placement_modes": ["host_pinned", "nic_pinned"],
+          "metadata": {
+            "arrival_label": "stress",
+            "background_load": "heavy"
+          }
+        }
+      ]
+    },
+    {
+      "name": "skew_dag_heavy",
+      "task_id": 901,
+      "workload_name": "skew_dag_heavy",
+      "description": "Heavier skew variant of the KV DAG workload where the db_lookup stage carries\n80/20-style heavy-tail instructions/bytes to stress host↔NIC transfers.",
+      "metadata": {
+        "workload_label": "skew_dag_heavy",
+        "arrival_model": "dag-burst",
+        "zipf_alpha": "1.2"
+      },
+      "batch_runs": [
+        {
+          "name": "dag-heavy-prefer-host",
+          "policy": "prefer-host",
+          "metadata": {
+            "placement": "host"
+          }
+        },
+        {
+          "name": "dag-heavy-prefer-nic",
+          "policy": "prefer-nic",
+          "metadata": {
+            "placement": "nic"
+          }
+        }
+      ],
+      "scenarios": [
+        {
+          "name": "baseline",
+          "arrival": "workloads/arrivals/poisson_bursty.yaml",
+          "arrival_scales": [1.0],
+          "seeds": [1],
+          "placement_modes": ["host_pinned", "nic_pinned"],
+          "metadata": {
+            "arrival_label": "baseline",
+            "background_load": "light"
+          }
+        },
+        {
+          "name": "stress",
+          "arrival": "workloads/arrivals/poisson_bursty.yaml",
+          "arrival_scales": [1.4],
+          "seeds": [1],
+          "placement_modes": ["host_pinned", "nic_pinned"],
+          "metadata": {
+            "arrival_label": "stress",
+            "background_load": "heavy"
+          }
+        }
+      ],
+      "stages": {
+        "hash_key": {
+          "set": {
+            "instructions": 25000000.0,
+            "demands": [
+              {
+                "resource": "host_cpu",
+                "units": 0.9
+              }
+            ]
+          }
+        },
+        "db_lookup": {
+          "set": {
+            "instructions": 120000000.0,
+            "bytes_in": 4096.0,
+            "bytes_out": 16384.0,
+            "demands": [
+              {
+                "resource": "host_cpu",
+                "units": 2.5
+              },
+              {
+                "resource": "host_dram",
+                "units": 3.5
+              },
+              {
+                "resource": "host_link",
+                "units": 16384.0
+              }
+            ]
+          }
+        },
+        "serialize_resp": {
+          "set": {
+            "deterministic_service_time": 1.2,
+            "instructions": 15000000.0,
+            "bytes_in": 16384.0,
+            "bytes_out": 4096.0,
+            "demands": [
+              {
+                "resource": "host_cpu",
+                "units": 0.9
+              },
+              {
+                "resource": "host_dram",
+                "units": 0.4
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "skew_dag_zipf14",
+      "task_id": 902,
+      "workload_name": "skew_dag_zipf14",
+      "description": "Zipf-heavy (alpha≈1.4) variant of the KV DAG workload. The db_lookup node\ninherits a long-tail key distribution so host-pinned placement keeps\nre-touching the same hot rows (high host_link + DRAM pressure) while NIC\nplacement pushes lookups across the DPA fabric.",
+      "metadata": {
+        "workload_label": "skew_dag_zipf14",
+        "arrival_model": "dag-burst",
+        "zipf_alpha": "1.4"
+      },
+      "batch_runs": [
+        {
+          "name": "dag-zipf14-prefer-host",
+          "policy": "prefer-host",
+          "metadata": {
+            "placement": "host"
+          }
+        },
+        {
+          "name": "dag-zipf14-prefer-nic",
+          "policy": "prefer-nic",
+          "metadata": {
+            "placement": "nic"
+          }
+        }
+      ],
+      "scenarios": [
+        {
+          "name": "baseline",
+          "arrival": "workloads/arrivals/poisson_bursty.yaml",
+          "arrival_scales": [1.0],
+          "seeds": [1],
+          "placement_modes": ["host_pinned", "nic_pinned"],
+          "metadata": {
+            "arrival_label": "baseline",
+            "background_load": "light"
+          }
+        },
+        {
+          "name": "stress",
+          "arrival": "workloads/arrivals/poisson_bursty.yaml",
+          "arrival_scales": [1.4],
+          "seeds": [1],
+          "placement_modes": ["host_pinned", "nic_pinned"],
+          "metadata": {
+            "arrival_label": "stress",
+            "background_load": "heavy"
+          }
+        }
+      ],
+      "stages": {
+        "hash_key": {
+          "set": {
+            "instructions": 30000000.0,
+            "demands": [
+              {
+                "resource": "host_cpu",
+                "units": 1.0
+              }
+            ]
+          }
+        },
+        "db_lookup": {
+          "set": {
+            "service_profile": {
+              "key": "kv_lookup_zipf14",
+              "domain": "host",
+              "mode": "stochastic"
+            },
+            "instructions": 220000000.0,
+            "bytes_in": 4096.0,
+            "bytes_out": 32768.0,
+            "demands": [
+              {
+                "resource": "host_cpu",
+                "units": 4.2
+              },
+              {
+                "resource": "host_dram",
+                "units": 5.0
+              },
+              {
+                "resource": "host_link",
+                "units": 65536.0
+              }
+            ]
+          }
+        },
+        "serialize_resp": {
+          "set": {
+            "deterministic_service_time": 1.4,
+            "instructions": 17000000.0,
+            "bytes_in": 32768.0,
+            "bytes_out": 4096.0,
+            "demands": [
+              {
+                "resource": "host_cpu",
+                "units": 1.2
+              },
+              {
+                "resource": "host_dram",
+                "units": 0.5
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "skew_dag_zipf18",
+      "task_id": 903,
+      "workload_name": "skew_dag_zipf18",
+      "description": "More extreme Zipf-heavy (alpha≈1.8) variant that further amplifies db_lookup\nCPU/link pressure so host-pinned runs thrash whereas NIC placement keeps\nlatency flat.",
+      "metadata": {
+        "workload_label": "skew_dag_zipf18",
+        "arrival_model": "dag-burst",
+        "zipf_alpha": "1.8"
+      },
+      "batch_runs": [
+        {
+          "name": "dag-zipf18-prefer-host",
+          "policy": "prefer-host",
+          "metadata": {
+            "placement": "host"
+          }
+        },
+        {
+          "name": "dag-zipf18-prefer-nic",
+          "policy": "prefer-nic",
+          "metadata": {
+            "placement": "nic"
+          }
+        }
+      ],
+      "scenarios": [
+        {
+          "name": "baseline",
+          "arrival": "workloads/arrivals/poisson_bursty.yaml",
+          "arrival_scales": [1.0],
+          "seeds": [1],
+          "placement_modes": ["host_pinned", "nic_pinned"],
+          "metadata": {
+            "arrival_label": "baseline",
+            "background_load": "light"
+          }
+        },
+        {
+          "name": "stress",
+          "arrival": "workloads/arrivals/poisson_bursty.yaml",
+          "arrival_scales": [1.5],
+          "seeds": [1],
+          "placement_modes": ["host_pinned", "nic_pinned"],
+          "metadata": {
+            "arrival_label": "stress",
+            "background_load": "heavy"
+          }
+        }
+      ],
+      "stages": {
+        "hash_key": {
+          "set": {
+            "instructions": 35000000.0,
+            "demands": [
+              {
+                "resource": "host_cpu",
+                "units": 1.1
+              }
+            ]
+          }
+        },
+        "db_lookup": {
+          "set": {
+            "service_profile": {
+              "key": "kv_lookup_zipf18",
+              "domain": "host",
+              "mode": "stochastic"
+            },
+            "instructions": 320000000.0,
+            "bytes_in": 4096.0,
+            "bytes_out": 49152.0,
+            "demands": [
+              {
+                "resource": "host_cpu",
+                "units": 5.0
+              },
+              {
+                "resource": "host_dram",
+                "units": 6.0
+              },
+              {
+                "resource": "host_link",
+                "units": 131072.0
+              }
+            ]
+          }
+        },
+        "serialize_resp": {
+          "set": {
+            "deterministic_service_time": 1.6,
+            "instructions": 20000000.0,
+            "bytes_in": 49152.0,
+            "bytes_out": 4096.0,
+            "demands": [
+              {
+                "resource": "host_cpu",
+                "units": 1.4
+              },
+              {
+                "resource": "host_dram",
+                "units": 0.6
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

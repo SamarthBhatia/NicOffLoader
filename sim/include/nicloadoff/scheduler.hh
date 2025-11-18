@@ -4,9 +4,11 @@
 #include "nicloadoff/event_queue.hh"
 #include "nicloadoff/policy_hook.hh"
 #include "nicloadoff/resource.hh"
+#include "nicloadoff/rolling_runtime_metrics.hh"
 #include "nicloadoff/task.hh"
 
 #include <deque>
+#include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -27,6 +29,17 @@ class SchedulerError : public std::runtime_error {
 
 class BasicScheduler {
   public:
+    static constexpr std::size_t kPolicyWaitingReorderWindow = 100;
+    static constexpr Duration kRollingQueueWindowUs = 50'000.0;
+    static constexpr Duration kRollingUtilizationWindowUs = 50'000.0;
+    static constexpr std::size_t kRollingSojournWindowTasks = 128;
+
+    struct RollingWindowConfig {
+        Duration queue_window_us{kRollingQueueWindowUs};
+        Duration utilization_window_us{kRollingUtilizationWindowUs};
+        std::size_t sojourn_window_tasks{kRollingSojournWindowTasks};
+    };
+
     struct TaskStatus {
         TaskId id{};
         std::size_t stage_index{0};
@@ -45,6 +58,9 @@ class BasicScheduler {
     };
 
     explicit BasicScheduler(ResourcePool resources, ServiceTimeModel* service_model = nullptr);
+    BasicScheduler(ResourcePool resources,
+                   ServiceTimeModel* service_model,
+                   RollingWindowConfig rolling_config);
 
     void submit_task(const Task& task);
     void run_until_empty();
@@ -52,19 +68,24 @@ class BasicScheduler {
 
     [[nodiscard]] SimTime current_time() const noexcept { return current_time_; }
     void set_policy_hook(policy::PolicyHook* hook) noexcept { policy_hook_ = hook; }
+    void set_policy_metadata(std::map<std::string, std::string> metadata) { scenario_metadata_ = std::move(metadata); }
     [[nodiscard]] const std::vector<TaskId>& completed_tasks() const noexcept { return completed_tasks_; }
     [[nodiscard]] const ResourcePool& resource_pool() const noexcept { return resources_; }
     [[nodiscard]] std::optional<ScheduledEvent> last_event() const noexcept { return last_event_; }
     [[nodiscard]] std::optional<ScheduledEvent> next_event() const;
     [[nodiscard]] std::size_t event_queue_size() const noexcept { return queue_.size(); }
     [[nodiscard]] std::size_t waiting_queue_size() const noexcept { return waiting_queue_.size(); }
+    [[nodiscard]] std::size_t peak_waiting_queue_depth() const noexcept { return peak_waiting_queue_depth_; }
     [[nodiscard]] std::vector<TaskId> waiting_tasks() const;
     [[nodiscard]] std::vector<TaskStatus> task_statuses() const;
     [[nodiscard]] std::size_t events_processed() const noexcept { return events_processed_; }
     [[nodiscard]] bool has_pending_work() const noexcept { return !queue_.empty() || !waiting_queue_.empty(); }
     [[nodiscard]] const std::vector<TaskMetrics>& completed_metrics() const noexcept { return completed_metrics_; }
     [[nodiscard]] RunMetrics aggregated_metrics() const;
+    [[nodiscard]] PolicyRollingMetrics rolling_metrics_snapshot() const;
     [[nodiscard]] PolicyStateSnapshot policy_state_snapshot() const;
+    [[nodiscard]] std::size_t policy_waiting_reorders() const noexcept { return policy_waiting_reorders_; }
+    [[nodiscard]] std::size_t policy_waiting_reorders_recent(std::size_t window) const;
 
   private:
     struct StageRuntime {
@@ -96,10 +117,14 @@ class BasicScheduler {
     std::unordered_map<TaskId, TaskContext> tasks_;
     std::deque<TaskId> waiting_queue_;
     std::unordered_set<TaskId> waiting_set_;
+    std::size_t peak_waiting_queue_depth_{0};
     std::vector<TaskId> completed_tasks_;
     std::optional<ScheduledEvent> last_event_;
     std::size_t events_processed_{0};
     std::vector<TaskMetrics> completed_metrics_;
+    std::size_t policy_waiting_reorders_{0};
+    std::deque<std::size_t> policy_waiting_reorder_marks_;
+    std::map<std::string, std::string> scenario_metadata_;
 
     void handle_event(const ScheduledEvent& event);
     void handle_task_arrival(TaskId id, SimTime timestamp);
@@ -115,6 +140,21 @@ class BasicScheduler {
     void evaluate_policy_hook();
     void apply_waiting_reorder(const std::vector<TaskId>& preferred_order);
     void apply_admission_control(const policy::AdmissionControlDirective& directive);
+    void record_waiting_queue_sample();
+    void initialize_domain_usage();
+    void adjust_domain_usage(ResourceId resource_id, double delta);
+    void record_utilization_sample(SimTime timestamp);
+    void prune_waiting_reorder_marks();
+
+    struct DomainUsage {
+        double capacity{0.0};
+        double in_use{0.0};
+    };
+
+    RollingWindowConfig rolling_config_;
+    RollingRuntimeMetrics rolling_metrics_;
+    DomainUsage host_usage_;
+    DomainUsage nic_usage_;
 };
 
 } // namespace nicloadoff
