@@ -13,6 +13,7 @@
 - When a discrete feature wraps up, surface it promptly so we can open a pull request against `main`.
 - Whenever a new user-facing feature lands (metrics, policies, manifests, loaders), add or refresh the TUI surface so the interactive view stays in parity with the CLI.
 - Raise a pull request as soon as a coherent feature or fix is ready; don’t sit on stacked local changes—prefer smaller, reviewable PRs tied to status updates.
+- Examples added under `policies/examples/` should ship with a manifest and, where feasible, a CLI or CTest regression that exercises them end-to-end.
 
 ## Build, Test, and Development Commands
 - `cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo` configures the project (once CMakeLists lands); rerun after dependency changes.

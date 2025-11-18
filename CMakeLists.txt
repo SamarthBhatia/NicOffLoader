@@ -76,6 +76,16 @@ add_test(
             --workload ${CMAKE_SOURCE_DIR}/workloads/tests/policy_queue_flip.yaml
 )
 
+add_test(
+    NAME policy_dsl_manifest_smoke_test
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tools/cli/tests/policy_dsl_manifest_smoke_test.py
+            --cli $<TARGET_FILE:nicloadoff_cli>
+            --manifests
+            ${CMAKE_SOURCE_DIR}/policies/examples/stage_match_manifest.yaml
+            ${CMAKE_SOURCE_DIR}/policies/examples/skew_dag_stage_manifest.yaml
+)
+
 add_custom_target(
     policy_analysis
     COMMAND ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/run_analysis.sh

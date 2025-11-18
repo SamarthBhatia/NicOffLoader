@@ -72,6 +72,19 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
 cmake --build build
 ```
 
+### Quick TUI Run (recommended for first-time verification)
+1. Build as above (`cmake --build build`).
+2. Launch the TUI:
+   ```bash
+   ./build/tools/tui/nicloadoff_tui
+   ```
+3. Pick a profile/workload (use arrow keys + Tab to move between lists), press Enter to load, then Space to start. Cycle policies with `p` (built-ins plus DSL configs discovered under `policies/examples/`).
+
+TUI controls (always visible on the left panel):
+- `↑/↓` navigate, `Tab` swap menu, `Enter` load, `Space` run/pause, `n` step once, `r` reset seed
+- `H`/`N` toggle host/NIC stochastic modes; `m` cycles the `arrival_label` metadata sent to DSL policies
+- `p` cycles policies; `s` saves the current metrics report; `q` quits
+
 ### Run Tests
 ```bash
 ctest --test-dir build
