@@ -17,8 +17,6 @@ Primary planning artifacts live in `scope.md` (goals, success criteria) and `sta
 - `profiles/` — hardware parameter files (e.g., BlueField-2).
 - `experiments/` — experiment manifests, run logs, and results.
 - `plots/` — analysis scripts and generated figures.
-- `thesis/` — writing assets for the final report.
-- `AGENTS.md` — contributor quickstart and workflow notes.
 - `scope.md` — Phase 0 scope and success criteria.
 - `status.md` — rolling project status (Done / Next / Remaining).
 
@@ -264,6 +262,6 @@ The status panel shows the active policy, admission limits (if any), live queue/
 - Python (matplotlib / seaborn) for data reduction and plotting.
 
 ## Contributing
-Please read `AGENTS.md` for guidelines on status tracking, coding style, and PR expectations. Update `status.md` after each work session to record progress and queue follow-up tasks.
+Update `status.md` after each work session to record progress and queue follow-up tasks.
 
 Format C++ and CMake sources with `clang-format` and `cmake-format` before pushing—the CI workflow enforces both.
