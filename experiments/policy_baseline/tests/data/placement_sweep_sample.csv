@@ -1,0 +1,3 @@
+workload_label,arrival_label,background_load,zipf_alpha,placement_mode,throughput_per_sec,mean_latency_us,latency_p95_us
+skew_dag_heavy,baseline,light,1.2,host_pinned,600000.0,2.0,2.6
+skew_dag_heavy,baseline,light,1.2,nic_pinned,800000.0,1.0,1.8

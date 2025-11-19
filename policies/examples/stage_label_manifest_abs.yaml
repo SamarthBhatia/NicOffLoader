@@ -1,0 +1,5 @@
+profile: /Users/samarthbhatia/Developer/Systems/NicLoadOff/profiles/bf2_default.yaml
+workload: /Users/samarthbhatia/Developer/Systems/NicLoadOff/workloads/tests/dsl_stage_wait.yaml
+policy: dsl
+policy_config: /Users/samarthbhatia/Developer/Systems/NicLoadOff/policies/examples/stage_label_reorder.dsl.yaml
+output: /tmp/nicloadoff_stage_label.json

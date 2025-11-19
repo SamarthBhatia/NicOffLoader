@@ -40,6 +40,12 @@ add_test(
 )
 
 add_test(
+    NAME policy_join_placement_test
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/tests/join_policy_vs_placement_test.py
+)
+
+add_test(
     NAME rolling_metrics_spike_test
     COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_SOURCE_DIR}/tools/cli/tests/rolling_metrics_spike_test.py
@@ -83,6 +89,7 @@ add_test(
             --cli $<TARGET_FILE:nicloadoff_cli>
             --manifests
             ${CMAKE_SOURCE_DIR}/policies/examples/stage_match_manifest.yaml
+            ${CMAKE_SOURCE_DIR}/policies/examples/stage_label_manifest.yaml
             ${CMAKE_SOURCE_DIR}/policies/examples/skew_dag_stage_manifest.yaml
 )
 

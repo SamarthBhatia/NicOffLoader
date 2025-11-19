@@ -1,0 +1,3 @@
+run_name,throughput_per_sec,mean_latency_us,p95_latency_us,workload_label,arrival_label,background_load,zipf_alpha
+dag-sample,750000.0,1.5,2.5,skew_dag_heavy,baseline,light,1.2
+queue-flip-prefer-nic,500000.0,1.1,2.0,policy_queue_flip,baseline,light,

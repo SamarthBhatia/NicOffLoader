@@ -8,6 +8,8 @@ maintains a CSV summary that downstream analysis scripts can ingest directly.
 - `batch.yaml` — batch manifest consumed by `nicloadoff_cli --batch`.
 - `results/` — per-run JSON outputs plus the aggregated CSV (ignored from version control).
 - `calc_skew_baselines.py` — helper to summarize host vs. NIC placement deltas per skew tier from the placement sweep CSV.
+- `tests/join_policy_vs_placement_test.py` — CTest-backed regression that runs `join_placement.py` on sample fixtures and verifies placement deltas (plus the queue-flip suppression path) stay wired into CI.
+- `tests/data/policy_normalized_sample.csv`, `tests/data/placement_sweep_sample.csv` — fixtures fed into the join regression so the CLI stays hermetic without re-running the full sweeps.
 - `../workloads/tests/policy_queue_flip.yaml` — deterministic workload used by the acceptance test to prove queue reordering under heavy load.
 
 ## Running the batch
