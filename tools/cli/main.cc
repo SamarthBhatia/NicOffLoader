@@ -40,12 +40,34 @@ int main(int argc, char** argv) {
         std::cout << "Completed " << summary.completed_tasks << " tasks in "
                   << format_value(summary.makespan_us) << " us\n";
         std::cout << "Throughput: " << format_value(summary.throughput_per_sec) << " tasks/s\n";
+        std::cout << "Rolling windows (queue/util/sojourn): "
+                  << format_value(options.rolling_queue_window_us, 0) << " us / "
+                  << format_value(options.rolling_util_window_us, 0) << " us / "
+                  << options.rolling_sojourn_window_tasks << " tasks\n";
         const auto& policy_metrics = summary.metrics.policy;
         std::cout << "Policy waiting reorders: " << policy_metrics.waiting_reorders
                   << " (per task " << format_value(policy_metrics.waiting_reorders_per_task, 6) << ")\n";
         if (policy_metrics.waiting_reorder_recent_task_count > 0) {
             std::cout << "Recent reorder rate (last " << policy_metrics.waiting_reorder_recent_task_count
                       << " tasks): " << format_value(policy_metrics.waiting_reorders_per_task_recent, 6) << "\n";
+        }
+        const auto& rolling = summary.rolling_metrics;
+        if (rolling.waiting_queue_depth.samples > 0) {
+            std::cout << "Rolling queue avg/peak (latest): "
+                      << format_value(rolling.waiting_queue_depth.average, 6) << " / "
+                      << format_value(rolling.waiting_queue_depth.peak, 6) << " ("
+                      << format_value(rolling.waiting_queue_depth.latest, 6) << ")\n";
+        }
+        if (rolling.host_utilization.samples > 0 || rolling.nic_utilization.samples > 0) {
+            std::cout << "Rolling util avg (host/nic): "
+                      << format_value(rolling.host_utilization.average, 6) << " / "
+                      << format_value(rolling.nic_utilization.average, 6) << "\n";
+        }
+        if (rolling.sojourn.samples > 0) {
+            std::cout << "Rolling sojourn mean/p95/p99 (us): "
+                      << format_value(rolling.sojourn.mean_latency, 6) << " / "
+                      << format_value(rolling.sojourn.p95_latency, 6) << " / "
+                      << format_value(rolling.sojourn.p99_latency, 6) << "\n";
         }
         std::cout << "Report written to " << options.output_path << "\n";
         if (summary.metrics.aggregate.latency_stats.count > 0) {

@@ -399,12 +399,14 @@ class SimulationSession {
                       WorkloadSpec workload,
                       std::map<std::string, std::string> metadata,
                       std::uint64_t seed,
+                      BasicScheduler::RollingWindowConfig rolling_config,
                       std::unique_ptr<policy::PolicyHook> policy = nullptr)
         : profile_(std::move(profile)),
           workload_(std::move(workload)),
           policy_hook_(std::move(policy)),
           seed_(seed),
-          metadata_(std::move(metadata)) {
+          metadata_(std::move(metadata)),
+          rolling_config_(rolling_config) {
         reset(seed_);
     }
 
@@ -417,7 +419,8 @@ class SimulationSession {
         resource_ids_ = inventory.ids;
         dag_controller_ = DagSubmissionController::from_spec(workload_, resource_ids_);
         auto tasks = make_tasks_from_spec(workload_, resource_ids_);
-        scheduler_ = std::make_unique<BasicScheduler>(std::move(inventory.pool), service_model_.get());
+        scheduler_ =
+            std::make_unique<BasicScheduler>(std::move(inventory.pool), service_model_.get(), rolling_config_);
         if (policy_hook_) {
             scheduler_->set_policy_hook(policy_hook_.get());
         }
@@ -531,6 +534,7 @@ class SimulationSession {
     std::uint64_t seed_{1};
     std::map<std::string, std::string> metadata_;
     bool finished_{false};
+    BasicScheduler::RollingWindowConfig rolling_config_{};
 };
 
 struct AppState {
@@ -543,6 +547,9 @@ struct AppState {
     std::vector<std::string> load_errors;
     std::vector<std::string> arrival_labels{"steady", "burst"};
     int arrival_label_index{0};
+    double rolling_queue_window_us{BasicScheduler::kRollingQueueWindowUs};
+    double rolling_util_window_us{BasicScheduler::kRollingUtilizationWindowUs};
+    std::size_t rolling_sojourn_window_tasks{BasicScheduler::kRollingSojournWindowTasks};
 
     int profile_index{0};
     int workload_index{0};
@@ -641,9 +648,14 @@ struct AppState {
             return false;
         }
 
+        BasicScheduler::RollingWindowConfig rolling_config;
+        rolling_config.queue_window_us = rolling_queue_window_us;
+        rolling_config.utilization_window_us = rolling_util_window_us;
+        rolling_config.sojourn_window_tasks = rolling_sojourn_window_tasks;
+
         try {
             session = std::make_unique<SimulationSession>(
-                profile, std::move(spec), metadata, seed_to_use, std::move(policy_hook));
+                profile, std::move(spec), metadata, seed_to_use, rolling_config, std::move(policy_hook));
         } catch (const std::exception& ex) {
             status_message = std::string("Failed to initialise simulation: ") + ex.what();
             session.reset();
@@ -994,6 +1006,9 @@ void draw_right_panel(WINDOW* win, const AppState& state, const SimulationSnapsh
                (state.host_stochastic ? "stochastic" : "deterministic"));
     print_line(std::string("  NIC service mode: ") +
                (state.nic_stochastic ? "stochastic" : "deterministic"));
+    print_line("  Rolling windows: queue " + format_double(state.rolling_queue_window_us, 0) + " us | util " +
+               format_double(state.rolling_util_window_us, 0) + " us | sojourn " +
+               std::to_string(state.rolling_sojourn_window_tasks) + " tasks");
     std::string policy_label = "None";
     std::optional<std::filesystem::path> policy_path;
     if (!state.policy_entries.empty()) {

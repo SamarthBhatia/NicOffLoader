@@ -83,6 +83,8 @@ TUI controls (always visible on the left panel):
 - `H`/`N` toggle host/NIC stochastic modes; `m` cycles the `arrival_label` metadata sent to DSL policies
 - `p` cycles policies; `s` saves the current metrics report; `q` quits
 
+The right-hand status panel now calls out the queue/util/sojourn rolling window sizes next to their live averages, so you can keep an eye on the policy’s inputs while stepping through events.
+
 ### Run Tests
 ```bash
 ctest --test-dir build
@@ -111,6 +113,8 @@ Once you have a profile and workload YAML ready, invoke the single-run CLI and o
   --policy prefer-nic \
   --output run.json
 ```
+
+Each summary line now echoes the configured queue/util/sojourn windows plus the latest rolling queue/utilization/sojourn averages so you can confirm the policy’s live inputs without cracking open the JSON report.
 
 Available policy identifiers match the TUI presets: `none`, `descending-id`, `limit-active-1`, `prefer-host`, `prefer-nic`, and the new `prefer-adaptive`, which leans toward NIC-heavy tasks whenever the rolling queue/utilization windows show the host saturating (and swings back toward host-heavy work once NIC contention dominates). Rolling stats flow into the CLI batch CSV/plots via the `rolling_*` columns, and the DSL can reference them directly through `when.metric` (see the list below) so scripted policies react to live queue/utilization spikes without dropping down to C++.
 
