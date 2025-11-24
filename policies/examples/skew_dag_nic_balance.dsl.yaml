@@ -1,0 +1,24 @@
+rules:
+  - when:
+      metric: nic_util_avg
+      op: ">="
+      value: 0.6
+    match:
+      stage: db_lookup
+      metadata:
+        workload_label: skew_dag
+    action:
+      reorder: prefer-host
+  - match:
+      stage: serialize_resp
+      metadata:
+        workload_label: skew_dag
+        arrival_label: stress
+    action:
+      reorder: prefer-nic
+  - match:
+      metadata:
+        background_load: heavy
+    action:
+      admission:
+        max_active: 3

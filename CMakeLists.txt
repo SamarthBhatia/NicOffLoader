@@ -103,6 +103,8 @@ add_test(
             ${CMAKE_SOURCE_DIR}/policies/examples/stage_match_manifest.yaml
             ${CMAKE_SOURCE_DIR}/policies/examples/stage_label_manifest.yaml
             ${CMAKE_SOURCE_DIR}/policies/examples/skew_dag_stage_manifest.yaml
+            ${CMAKE_SOURCE_DIR}/policies/examples/skew_dag_stage_balance_manifest.yaml
+            ${CMAKE_SOURCE_DIR}/policies/examples/skew_dag_nic_balance_manifest.yaml
 )
 
 add_test(

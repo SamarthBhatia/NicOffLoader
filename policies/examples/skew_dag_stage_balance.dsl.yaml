@@ -1,0 +1,23 @@
+rules:
+  - when:
+      metric: queue_avg
+      op: ">="
+      value: 1.0
+    match:
+      stage: db_lookup
+      metadata:
+        workload_label: skew_dag
+    action:
+      reorder: prefer-nic
+  - match:
+      stage: serialize_resp
+      metadata:
+        workload_label: skew_dag
+    action:
+      reorder: prefer-host
+  - match:
+      metadata:
+        arrival_label: burst
+    action:
+      admission:
+        max_active: 2

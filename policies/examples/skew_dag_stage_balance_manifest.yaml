@@ -1,0 +1,8 @@
+profile: profiles/bf2_default.yaml
+workload: workloads/examples/skew_dag.yaml
+policy: dsl
+policy_config: policies/examples/skew_dag_stage_balance.dsl.yaml
+metadata:
+  workload_label: skew_dag
+  arrival_label: burst
+output: /tmp/nicloadoff_skew_dag_stage_balance.json

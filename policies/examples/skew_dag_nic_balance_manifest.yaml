@@ -1,0 +1,9 @@
+profile: profiles/bf2_default.yaml
+workload: workloads/examples/skew_dag.yaml
+policy: dsl
+policy_config: policies/examples/skew_dag_nic_balance.dsl.yaml
+metadata:
+  workload_label: skew_dag
+  arrival_label: stress
+  background_load: heavy
+output: /tmp/nicloadoff_skew_dag_nic_balance.json

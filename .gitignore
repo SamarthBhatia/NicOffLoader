@@ -8,3 +8,9 @@ experiments/**/results/*
 .DS_Store
 .idea/
 .vscode/
+
+# Session logs
+logs.md
+
+# Temporary absolute-manifest copies created by CLI tests
+*_abs.yaml

@@ -8,6 +8,7 @@ defaults:
     background_load: low
     zipf_alpha: na
     arrival_label: deterministic
+    dsl_policy: na
   service_modes:
     host: deterministic
     nic: deterministic
@@ -19,20 +20,24 @@ metadata_keys:
   - zipf_alpha
   - arrival_label
   - placement
+  - dsl_policy
 csv: ./results/policy_baseline.csv
 runs:
   - name: prefer-host
     policy: prefer-host
     metadata:
       placement: host
+      dsl_policy: na
   - name: prefer-nic
     policy: prefer-nic
     metadata:
       placement: nic
+      dsl_policy: na
   - name: limit-active
     policy: limit-active-1
     metadata:
       placement: host
+      dsl_policy: na
   - name: dag-prefer-host-baseline
     workload: ../../workloads/examples/skew_dag.yaml
     policy: prefer-host
@@ -73,6 +78,31 @@ runs:
       zipf_alpha: 1.0
       arrival_label: stress
       placement: nic
+      dsl_policy: na
+  - name: dag-dsl-stage-balance
+    workload: ../../workloads/examples/skew_dag.yaml
+    policy: dsl
+    policy_config: ../../policies/examples/skew_dag_stage_balance.dsl.yaml
+    metadata:
+      workload_label: skew_dag
+      arrival_model: dag-burst
+      background_load: light
+      zipf_alpha: 1.0
+      arrival_label: baseline
+      placement: dsl-stage-balance
+      dsl_policy: stage_balance
+  - name: dag-dsl-nic-balance
+    workload: ../../workloads/examples/skew_dag.yaml
+    policy: dsl
+    policy_config: ../../policies/examples/skew_dag_nic_balance.dsl.yaml
+    metadata:
+      workload_label: skew_dag
+      arrival_model: dag-burst
+      background_load: heavy
+      zipf_alpha: 1.0
+      arrival_label: stress
+      placement: dsl-nic-balance
+      dsl_policy: nic_balance
   - name: dag-heavy-prefer-host-baseline
     workload: ../../workloads/examples/skew_dag_heavy.yaml
     policy: prefer-host
