@@ -16,12 +16,22 @@ double metric_value(const PolicyStateSnapshot& snapshot, Metric metric) {
     switch (metric) {
     case Metric::kQueueAverage:
         return rolling.waiting_queue_depth.average;
+    case Metric::kQueuePeak:
+        return rolling.waiting_queue_depth.peak;
     case Metric::kHostUtilAverage:
         return rolling.host_utilization.average;
+    case Metric::kHostUtilPeak:
+        return rolling.host_utilization.peak;
     case Metric::kNicUtilAverage:
         return rolling.nic_utilization.average;
+    case Metric::kNicUtilPeak:
+        return rolling.nic_utilization.peak;
     case Metric::kSojournMean:
         return rolling.sojourn.mean_latency;
+    case Metric::kSojournP95:
+        return rolling.sojourn.p95_latency;
+    case Metric::kSojournP99:
+        return rolling.sojourn.p99_latency;
     }
     return 0.0;
 }
@@ -44,14 +54,29 @@ Metric parse_metric(const std::string& value) {
     if (value == "queue_avg") {
         return Metric::kQueueAverage;
     }
+    if (value == "queue_peak") {
+        return Metric::kQueuePeak;
+    }
     if (value == "host_util_avg") {
         return Metric::kHostUtilAverage;
+    }
+    if (value == "host_util_peak") {
+        return Metric::kHostUtilPeak;
     }
     if (value == "nic_util_avg") {
         return Metric::kNicUtilAverage;
     }
+    if (value == "nic_util_peak") {
+        return Metric::kNicUtilPeak;
+    }
     if (value == "sojourn_mean_us") {
         return Metric::kSojournMean;
+    }
+    if (value == "sojourn_p95_us") {
+        return Metric::kSojournP95;
+    }
+    if (value == "sojourn_p99_us") {
+        return Metric::kSojournP99;
     }
     throw std::runtime_error("unknown metric '" + value + "'");
 }

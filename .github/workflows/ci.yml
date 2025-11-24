@@ -85,6 +85,9 @@ jobs:
       - name: Configure CMake
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
 
+      - name: Refresh skew baselines + acceptance
+        run: cmake --build build --target refresh_skew_and_acceptance
+
       - name: Run policy analysis target
         run: cmake --build build --target policy_analysis
 
@@ -95,6 +98,7 @@ jobs:
           path: |
             experiments/policy_baseline/results/policy_baseline_normalized.csv
             experiments/policy_baseline/results/policy_baseline.parquet
+            experiments/policy_baseline/results/skew_tier_baselines.csv
             plots/generated/policy_baseline.png
             plots/generated/rolling_reorder_example.png
           if-no-files-found: error

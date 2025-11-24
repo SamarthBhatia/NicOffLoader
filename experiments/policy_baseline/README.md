@@ -93,11 +93,19 @@ To grab the latest snapshot after a CI failure:
 1. Navigate to the failing workflow run → `policy-analysis` job → **Artifacts** → download `policy-analysis-<sha>.zip`.
 2. Or use the GitHub CLI: `gh run download <run-id> --name policy-analysis-<sha>` and unzip locally (the paths above are preserved inside the archive).
 
-Prefer an automated workflow? Run `python3 tools/ci/fetch_policy_artifacts.py` from the repo root. The helper looks up the most recent `CI` workflow run whose head SHA matches your current `HEAD`, downloads the `policy-analysis-<sha>` artifact, and extracts it under `artifacts/policy-analysis/extracted/`. Need the newest passing run instead? Add `--latest --status success` to grab the freshest successful job on the current branch (even if your checkout is older), or `--list` to print the last N runs (IDs, status, branch, SHA) before choosing one. By default the script shells out to the GitHub CLI (`gh`). If `gh` is unavailable (or you pass `--use-api`), it falls back to the GitHub REST API—just ensure `GITHUB_TOKEN` (or `--token`) points to a PAT with `actions:read`. Pass `--run-id <id>` (or `--branch/--sha`) to override the selection logic, `--repo owner/name` to target forks, and `--download-dir/--extract-dir` to change destinations.
+Prefer an automated workflow? Run `python3 tools/ci/fetch_policy_artifacts.py` from the repo root. The helper looks up the most recent `CI` workflow run whose head SHA matches your current `HEAD`, downloads the `policy-analysis-<sha>` artifact, and extracts it under `artifacts/policy-analysis/extracted/`. Need the newest passing run instead? Add `--latest --status success` to grab the freshest successful job on the current branch (even if your checkout is older), or `--list` to print the last N runs (IDs, status, branch, SHA) before choosing one. By default the script shells out to the GitHub CLI (`gh`). If `gh` is unavailable (or you pass `--use-api`), it falls back to the GitHub REST API—just ensure `GITHUB_TOKEN` (or `--token`) points to a PAT with `actions:read`. Pass `--run-id <id>` (or `--branch/--sha`) to override the selection logic, `--repo owner/name` to target forks, and `--download-dir/--extract-dir` to change destinations. The helper now asserts the downloaded bundle contains the refreshed skew CSV, both normalized exports, and the generated plots (`plots/generated/policy_baseline.png`, `plots/generated/rolling_reorder_example.png`), so stale or partial artifacts get flagged immediately.
+
+Fork workflows that publish a constant artifact name (e.g., because the workflow/job names changed) can skip script edits by setting `NICLOADOFF_ARTIFACT_NAME=policy-analysis` or passing `--artifact-name policy-analysis` once—the helper will prefer those values over the default `policy-analysis-<sha>` suffix.
 
 Prefer using the build system instead? `cmake --build build --target fetch_policy_artifacts` runs the same helper (with the repo root as its working directory); make sure either the GitHub CLI is installed or `GITHUB_TOKEN` is set so the REST fallback can authenticate.
 
 These artifacts mirror exactly what `run_analysis.sh` emits, so you can open the CSVs/Parquet in notebooks or inspect the rendered plots without rerunning the sweep locally. Keep the archive (or the helper’s extracted snapshot) handy when debugging CI regressions so reviewers can reproduce the failure context.
+
+**Troubleshooting:** If the helper exits with `Missing required files (...)`, the downloaded artifact is incomplete or predates the refreshed workflow. Re-run the CI `policy-analysis` job (or locally: `cmake --build build --target refresh_skew_and_acceptance` followed by `cmake --build build --target policy_analysis`), then invoke the helper again. When reproducing locally, confirm `plots/generated/` exists and is writable so the plotting scripts can emit `policy_baseline.png` and `rolling_reorder_example.png` before packaging.
+
+The `policy-analysis` GitHub Actions job now runs `cmake --build build --target refresh_skew_and_acceptance` before the
+analysis target, so every artifact bundle includes a freshly regenerated `results/skew_tier_baselines.csv` alongside the
+normalized CSV/Parquet outputs and plots.
 
 ### Skew placement reference
 
@@ -108,6 +116,9 @@ python3 experiments/placement_baseline/run.py
 python3 experiments/policy_baseline/calc_skew_baselines.py
 python3 experiments/policy_baseline/tests/policy_batch_acceptance_test.py --cli build/tools/cli/nicloadoff_cli
 ```
+
+Already have the CLI built? `cmake --build build --target policy_batch_acceptance` wraps the acceptance test with the
+correct manifest/CSV/expected paths so you do not have to remember the long CLI invocation.
 
 `calc_skew_baselines.py` scans the placement CSV and writes `results/skew_tier_baselines.csv` with host vs. NIC
 throughput/latency per tier. The current snapshot (seed 1, BF2 profile) is:
@@ -122,6 +133,17 @@ throughput/latency per tier. The current snapshot (seed 1, BF2 profile) is:
 | `skew_dag_zipf14` | stress        | heavy      | 1.4   | 329.5              | 360.1             | +30.7           | 1.33           | 0.92          | +0.40       |
 | `skew_dag_zipf18` | baseline      | light      | 1.0   | 236.4              | 263.1             | +26.6           | 1.62           | 0.95          | +0.67       |
 | `skew_dag_zipf18` | stress        | heavy      | 1.5   | 329.8              | 384.0             | +54.2           | 1.62           | 0.95          | +0.67       |
+
+Regenerated new deltas? Run `python3 experiments/policy_baseline/update_skew_table.py` (pass `--source` when the CSV
+lives elsewhere) to rewrite this table directly from `results/skew_tier_baselines.csv`. Add `--dry-run` to preview the
+markdown before touching the README.
+
+Prefer one build command? `cmake --build build --target refresh_skew_baselines` depends on `placement_benchmark`, reruns
+the placement sweep, recomputes `results/skew_tier_baselines.csv`, and rewrites this README table in one go.
+If the CSV is already up to date and you only need to rewrite the markdown, `cmake --build build --target
+update_skew_table` wraps just the README helper so the flow stays consistent with the other analysis targets.
+Need both the CSV refresh and acceptance regression? `cmake --build build --target refresh_skew_and_acceptance`
+chains the full placement sweep, README rewrite, and policy batch check.
 
 These numbers provide the ground truth deltas policy hooks should target when prioritising NIC placement. Update
 the table after re-running the placement sweep with new profiles or arrival tiers. The acceptance test above

@@ -40,6 +40,18 @@ add_test(
 )
 
 add_test(
+    NAME policy_skew_readme_sync_test
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/tests/readme_skew_table_sync_test.py
+)
+
+add_test(
+    NAME policy_update_skew_table_helper_test
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/tests/update_skew_table_test.py
+)
+
+add_test(
     NAME policy_join_placement_test
     COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/tests/join_policy_vs_placement_test.py
@@ -103,6 +115,15 @@ add_test(
             --config ${CMAKE_SOURCE_DIR}/policies/examples/stage_label_reorder.dsl.yaml
 )
 
+add_test(
+    NAME policy_prefer_adaptive_test
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tools/cli/tests/policy_prefer_adaptive_test.py
+            --cli $<TARGET_FILE:nicloadoff_cli>
+            --profile ${CMAKE_SOURCE_DIR}/profiles/bf2_default.yaml
+            --host-burst-workload ${CMAKE_SOURCE_DIR}/workloads/tests/prefer_adaptive_host_burst.yaml
+)
+
 add_custom_target(
     policy_analysis
     COMMAND ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/run_analysis.sh
@@ -116,6 +137,55 @@ add_custom_target(
             ${CMAKE_SOURCE_DIR}/tools/ci/fetch_policy_artifacts.py
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Download latest policy-analysis artifact via GitHub CLI"
+)
+
+add_custom_target(
+    update_skew_table
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/update_skew_table.py
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Rewrite the skew-tier baseline table in experiments/policy_baseline/README.md"
+)
+
+add_custom_target(
+    refresh_skew_baselines
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/experiments/placement_baseline/run.py
+            --manifest
+            ${CMAKE_SOURCE_DIR}/experiments/placement_baseline/manifest.yaml
+            --binary
+            $<TARGET_FILE:placement_benchmark>
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/calc_skew_baselines.py
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/update_skew_table.py
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    DEPENDS placement_benchmark
+    COMMENT
+        "Re-run the placement sweep, recompute skew_tier_baselines.csv, and refresh the README table"
+)
+
+add_custom_target(
+    policy_batch_acceptance
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/tests/policy_batch_acceptance_test.py
+            --cli
+            $<TARGET_FILE:nicloadoff_cli>
+            --manifest
+            ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/batch.yaml
+            --csv
+            ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/results/policy_baseline.csv
+            --expected
+            ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/tests/data/skew_tier_baselines_expected.csv
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    DEPENDS nicloadoff_cli
+    COMMENT "Run the policy batch acceptance regression via the built CLI"
+)
+
+add_custom_target(
+    refresh_skew_and_acceptance
+    DEPENDS refresh_skew_baselines policy_batch_acceptance
+    COMMENT "Refresh skew deltas, rewrite the README table, and rerun the policy batch regression"
 )
 
 add_test(

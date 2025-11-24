@@ -15,6 +15,16 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib import parse, request
 
 
+ARTIFACT_NAME_ENV = "NICLOADOFF_ARTIFACT_NAME"
+REQUIRED_ARTIFACT_PATHS = [
+    Path("experiments/policy_baseline/results/skew_tier_baselines.csv"),
+    Path("experiments/policy_baseline/results/policy_baseline_normalized.csv"),
+    Path("experiments/policy_baseline/results/policy_baseline.parquet"),
+    Path("plots/generated/policy_baseline.png"),
+    Path("plots/generated/rolling_reorder_example.png"),
+]
+
+
 def run_cmd(args: List[str], *, capture: bool = True) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(args, capture_output=capture, text=True, check=False)
     if result.returncode != 0:
@@ -275,6 +285,22 @@ def unpack(archive: Path, extract_dir: Path) -> Path:
     return extract_dir
 
 
+def verify_required_artifacts(extracted_root: Path) -> None:
+    missing: List[Path] = []
+    for relative in REQUIRED_ARTIFACT_PATHS:
+        candidate = extracted_root / relative
+        if not candidate.exists():
+            missing.append(relative)
+    if missing:
+        formatted = ", ".join(str(path) for path in missing)
+        raise SystemExit(
+            f"[fetch] Missing required files ({formatted}). "
+            "The policy-analysis artifact should include these paths. "
+            "Rerun `cmake --build build --target refresh_skew_and_acceptance` followed by "
+            "`cmake --build build --target policy_analysis` (or re-run the CI policy-analysis job) before downloading again."
+        )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -285,7 +311,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--artifact-name",
         default=None,
-        help="Exact artifact name (default: policy-analysis-<sha>)",
+        help="Exact artifact name (default: policy-analysis-<sha>; override via "
+        f"{ARTIFACT_NAME_ENV})",
     )
     parser.add_argument(
         "--branch",
@@ -409,7 +436,8 @@ def main() -> int:
             )
             target_desc = f"{branch} (latest)" if args.latest else f"{branch}@{sha}"
             print(f"[fetch] Selected run ID {run_id} via REST API for {args.workflow} on {target_desc}")
-    artifact_name = args.artifact_name or f"policy-analysis-{selected_sha or sha}"
+    env_artifact_name = os.environ.get(ARTIFACT_NAME_ENV)
+    artifact_name = args.artifact_name or env_artifact_name or f"policy-analysis-{selected_sha or sha}"
     if have_cli and not args.use_api:
         archive = download_artifact(args.gh, run_id, artifact_name, args.download_dir)
     else:
@@ -423,6 +451,7 @@ def main() -> int:
         archive = download_artifact_api(repo_owner, repo_name, token, run_id, artifact_name, args.download_dir)
     print(f"[fetch] Downloaded artifact archive to {archive}")
     extracted_path = unpack(archive, args.extract_dir)
+    verify_required_artifacts(extracted_path)
     print(f"[fetch] Extracted files under {extracted_path}")
     return 0
 

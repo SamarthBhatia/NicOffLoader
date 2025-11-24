@@ -32,13 +32,14 @@ class FetchPolicyArtifactsTest(unittest.TestCase):
                 fetch, "download_artifact_api"
             ) as mock_download_api, mock.patch.object(
                 fetch, "unpack", return_value=extract_dir
-            ) as mock_unpack:
+            ) as mock_unpack, mock.patch.object(fetch, "verify_required_artifacts") as mock_verify:
                 fetch.main()
 
             mock_pick_cli.assert_called_once_with("gh", "CI", "feature", "abc123", 20, False, None)
             mock_download_cli.assert_called_once_with("gh", 42, "policy-analysis-abc123", download_dir)
             mock_download_api.assert_not_called()
             mock_unpack.assert_called_once_with(archive_path, extract_dir)
+            mock_verify.assert_called_once_with(extract_dir)
 
     def test_rest_fallback_when_gh_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -67,7 +68,9 @@ class FetchPolicyArtifactsTest(unittest.TestCase):
                 fetch, "download_artifact"
             ) as mock_download_cli, mock.patch.object(
                 fetch, "unpack", return_value=extract_dir
-            ) as mock_unpack, mock.patch.dict(os.environ, {"GITHUB_TOKEN": "ttt"}, clear=True):
+            ) as mock_unpack, mock.patch.object(
+                fetch, "verify_required_artifacts"
+            ) as mock_verify, mock.patch.dict(os.environ, {"GITHUB_TOKEN": "ttt"}, clear=True):
                 fetch.main()
 
             mock_slug.assert_called_once_with(None)
@@ -79,6 +82,77 @@ class FetchPolicyArtifactsTest(unittest.TestCase):
                 "nicloadoff", "NicLoadOff", "ttt", 314, "policy-analysis-feedface", download_dir
             )
             mock_unpack.assert_called_once_with(archive_path, extract_dir)
+            mock_verify.assert_called_once_with(extract_dir)
+
+    def test_env_artifact_name_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            download_dir = Path(tmpdir) / "dl"
+            extract_dir = Path(tmpdir) / "extract"
+            archive_path = download_dir / "artifact.zip"
+            argv = [
+                "fetch_policy_artifacts.py",
+                "--download-dir",
+                str(download_dir),
+                "--extract-dir",
+                str(extract_dir),
+            ]
+            with mock.patch("sys.argv", argv), mock.patch.object(fetch, "detect_sha", return_value="deadbeef"), mock.patch.object(
+                fetch, "detect_branch", return_value="main"
+            ), mock.patch(
+                "tools.ci.fetch_policy_artifacts.shutil.which", return_value="/usr/bin/gh"
+            ), mock.patch.object(
+                fetch, "pick_run_id_cli", return_value=(17, "cafebabe")
+            ) as mock_pick_cli, mock.patch.object(
+                fetch, "download_artifact", return_value=archive_path
+            ) as mock_download_cli, mock.patch.object(
+                fetch, "unpack", return_value=extract_dir
+            ) as mock_unpack, mock.patch.object(
+                fetch, "verify_required_artifacts"
+            ) as mock_verify, mock.patch.dict(
+                os.environ, {fetch.ARTIFACT_NAME_ENV: "policy-analysis"}, clear=True
+            ):
+                fetch.main()
+
+            mock_pick_cli.assert_called_once_with("gh", "CI", "main", "deadbeef", 20, False, None)
+            mock_download_cli.assert_called_once_with("gh", 17, "policy-analysis", download_dir)
+            mock_unpack.assert_called_once_with(archive_path, extract_dir)
+            mock_verify.assert_called_once_with(extract_dir)
+
+    def test_cli_flag_beats_env_artifact_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            download_dir = Path(tmpdir) / "dl"
+            extract_dir = Path(tmpdir) / "extract"
+            archive_path = download_dir / "artifact.zip"
+            argv = [
+                "fetch_policy_artifacts.py",
+                "--artifact-name",
+                "custom-artifact",
+                "--download-dir",
+                str(download_dir),
+                "--extract-dir",
+                str(extract_dir),
+            ]
+            with mock.patch("sys.argv", argv), mock.patch.object(fetch, "detect_sha", return_value="deadbeef"), mock.patch.object(
+                fetch, "detect_branch", return_value="main"
+            ), mock.patch(
+                "tools.ci.fetch_policy_artifacts.shutil.which", return_value="/usr/bin/gh"
+            ), mock.patch.object(
+                fetch, "pick_run_id_cli", return_value=(99, "cafebabe")
+            ) as mock_pick_cli, mock.patch.object(
+                fetch, "download_artifact", return_value=archive_path
+            ) as mock_download_cli, mock.patch.object(
+                fetch, "unpack", return_value=extract_dir
+            ) as mock_unpack, mock.patch.object(
+                fetch, "verify_required_artifacts"
+            ) as mock_verify, mock.patch.dict(
+                os.environ, {fetch.ARTIFACT_NAME_ENV: "policy-analysis"}, clear=True
+            ):
+                fetch.main()
+
+            mock_pick_cli.assert_called_once_with("gh", "CI", "main", "deadbeef", 20, False, None)
+            mock_download_cli.assert_called_once_with("gh", 99, "custom-artifact", download_dir)
+            mock_unpack.assert_called_once_with(archive_path, extract_dir)
+            mock_verify.assert_called_once_with(extract_dir)
 
     def test_latest_flag_updates_artifact_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -105,11 +179,13 @@ class FetchPolicyArtifactsTest(unittest.TestCase):
                 fetch, "download_artifact", return_value=archive_path
             ) as mock_download_cli, mock.patch.object(
                 fetch, "unpack", return_value=extract_dir
-            ):
+            ) as mock_unpack, mock.patch.object(fetch, "verify_required_artifacts") as mock_verify:
                 fetch.main()
 
             mock_pick_cli.assert_called_once_with("gh", "CI", "develop", "deadbeef", 20, True, "success")
             mock_download_cli.assert_called_once_with("gh", 77, "policy-analysis-cafebabe", download_dir)
+            mock_unpack.assert_called_once_with(archive_path, extract_dir)
+            mock_verify.assert_called_once_with(extract_dir)
 
     def test_list_runs_via_cli(self) -> None:
         sample_runs = [
@@ -141,6 +217,22 @@ class FetchPolicyArtifactsTest(unittest.TestCase):
         mock_load.assert_called_once_with("gh", "CI", "main", 20)
         mock_print.assert_called_once_with(sample_runs, None)
         mock_download.assert_not_called()
+
+    def test_verify_required_artifacts_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            for rel in fetch.REQUIRED_ARTIFACT_PATHS:
+                candidate = root / rel
+                candidate.parent.mkdir(parents=True, exist_ok=True)
+                candidate.write_text("ok")
+            fetch.verify_required_artifacts(root)
+
+    def test_verify_required_artifacts_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            with self.assertRaises(SystemExit) as ctx:
+                fetch.verify_required_artifacts(root)
+            self.assertIn("skew_tier_baselines.csv", str(ctx.exception))
 
 
 if __name__ == "__main__":

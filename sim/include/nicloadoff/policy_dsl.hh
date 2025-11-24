@@ -14,9 +14,14 @@ namespace nicloadoff::policy::dsl {
 
 enum class Metric {
     kQueueAverage,
+    kQueuePeak,
     kHostUtilAverage,
+    kHostUtilPeak,
     kNicUtilAverage,
+    kNicUtilPeak,
     kSojournMean,
+    kSojournP95,
+    kSojournP99,
 };
 
 enum class CompareOp {

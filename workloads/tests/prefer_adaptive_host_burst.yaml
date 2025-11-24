@@ -1,0 +1,51 @@
+schema_version: 0.1
+workload_name: prefer_adaptive_host_burst
+description: >
+  Four host-heavy tasks saturate CPUs while a NIC-heavy task waits; prefer-adaptive should
+  notice the host queue and prioritize the NIC-heavy work.
+tasks:
+  - id: 400
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 100.0
+        demands:
+          - resource: host_cpu
+            units: 16
+          - resource: nic_cpu
+            units: 1
+  - id: 401
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 100.0
+        demands:
+          - resource: host_cpu
+            units: 16
+          - resource: nic_cpu
+            units: 1
+  - id: 402
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 100.0
+        demands:
+          - resource: host_cpu
+            units: 16
+          - resource: nic_cpu
+            units: 1
+  - id: 403
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 100.0
+        demands:
+          - resource: host_cpu
+            units: 16
+          - resource: nic_cpu
+            units: 1
+  - id: 404
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 100.0
+        demands:
+          - resource: host_cpu
+            units: 8
+          - resource: nic_cpu
+            units: 7
