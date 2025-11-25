@@ -29,6 +29,8 @@
 namespace nicloadoff::cli {
 namespace {
 
+constexpr const char* kRollingPresetMetadataKey = "rolling_window_preset";
+
 [[nodiscard]] std::string trim_copy(const std::string& input) {
     const std::string whitespace = " \t\r\n";
     const auto begin = input.find_first_not_of(whitespace);
@@ -160,6 +162,8 @@ struct BatchDefaults {
         std::optional<std::size_t> sojourn_window_tasks;
     } rolling_windows;
     std::optional<std::vector<RollingWindowScheduleEvent>> rolling_schedule;
+    std::optional<std::string> rolling_schedule_preset_id;
+    std::optional<std::filesystem::path> rolling_schedule_preset_file;
 };
 
 struct BatchRunConfig {
@@ -182,6 +186,14 @@ std::filesystem::path resolve_relative_path(const std::filesystem::path& base, c
         path = base / path;
     }
     return path.lexically_normal();
+}
+
+std::filesystem::path default_presets_library_path() {
+#ifdef NICLOADOFF_DATA_DIR
+    return (std::filesystem::path(NICLOADOFF_DATA_DIR) / "tools/cli/rolling_window_presets.yaml").lexically_normal();
+#else
+    return std::filesystem::path("tools/cli/rolling_window_presets.yaml");
+#endif
 }
 
 void sort_schedule_events(std::vector<RollingWindowScheduleEvent>& events) {
@@ -332,9 +344,68 @@ std::vector<RollingWindowScheduleEvent> load_schedule_from_file(const std::files
     return events;
 }
 
+std::vector<std::string> list_presets_in_library(const std::filesystem::path& path) {
+    std::vector<std::string> names;
+    if (path.empty()) {
+        return names;
+    }
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        return names;
+    }
+    YAML::Node root;
+    try {
+        root = YAML::LoadFile(path.string());
+    } catch (const std::exception&) {
+        return names;
+    }
+    const YAML::Node presets = root["presets"];
+    if (!presets || !presets.IsMap()) {
+        return names;
+    }
+    for (const auto& entry : presets) {
+        if (!entry.first.IsScalar()) {
+            continue;
+        }
+        names.push_back(entry.first.as<std::string>());
+    }
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
+std::vector<RollingWindowScheduleEvent> load_schedule_from_preset_library(const std::filesystem::path& path,
+                                                                           const std::string& preset_id,
+                                                                           const std::string& context) {
+    YAML::Node root = YAML::LoadFile(path.string());
+    if (!root || !root.IsMap()) {
+        throw std::runtime_error(context + " must be a YAML mapping");
+    }
+    const YAML::Node presets = root["presets"];
+    if (!presets || !presets.IsMap()) {
+        throw std::runtime_error(context + " is missing a 'presets' mapping");
+    }
+    const YAML::Node preset = presets[preset_id];
+    if (!preset) {
+        throw std::runtime_error(context + " does not define preset '" + preset_id + "'");
+    }
+    const YAML::Node events = preset["events"];
+    if (!events) {
+        throw std::runtime_error(context + " preset '" + preset_id + "' is missing an 'events' list");
+    }
+    std::ostringstream event_ctx;
+    event_ctx << context << " preset '" << preset_id << "'.events";
+    auto schedule = parse_schedule_sequence(events, event_ctx.str());
+    if (schedule.empty()) {
+        throw std::runtime_error(context + " preset '" + preset_id + "' has an empty events list");
+    }
+    return schedule;
+}
+
 std::vector<RollingWindowScheduleEvent> parse_inline_schedule(const YAML::Node& node,
                                                               const std::filesystem::path& base_dir,
-                                                              const std::string& context) {
+                                                              const std::string& context,
+                                                              std::optional<std::string>* preset_id,
+                                                              std::optional<std::filesystem::path>* preset_path) {
     if (!node) {
         return {};
     }
@@ -342,6 +413,27 @@ std::vector<RollingWindowScheduleEvent> parse_inline_schedule(const YAML::Node& 
         return parse_schedule_sequence(node, context);
     }
     if (node.IsMap()) {
+        if (const YAML::Node preset = node["preset"]) {
+            if (!preset.IsScalar()) {
+                throw std::runtime_error(context + ".preset must be a string");
+            }
+            const std::string id = preset.as<std::string>();
+            std::filesystem::path library_path = default_presets_library_path();
+            if (const YAML::Node presets_file = node["presets_file"]) {
+                if (!presets_file.IsScalar()) {
+                    throw std::runtime_error(context + ".presets_file must be a string");
+                }
+                library_path = resolve_relative_path(base_dir, presets_file.as<std::string>());
+            }
+            auto events = load_schedule_from_preset_library(library_path, id, context + ".preset");
+            if (preset_id) {
+                *preset_id = id;
+            }
+            if (preset_path) {
+                *preset_path = library_path;
+            }
+            return events;
+        }
         if (const YAML::Node from_file = node["from_file"]) {
             if (!from_file.IsScalar()) {
                 throw std::runtime_error(context + ".from_file must be a path string");
@@ -567,16 +659,18 @@ BatchDefaults parse_batch_defaults(const YAML::Node& node,
         }
     }
     defaults.rolling_windows = parse_rolling_windows(node["rolling_windows"], "defaults.rolling_windows");
-    if (const YAML::Node schedule = node["rolling_window_schedule"]) {
-        defaults.rolling_schedule =
-            parse_inline_schedule(schedule, base_dir, "defaults.rolling_window_schedule");
-    }
+    defaults.rolling_schedule = parse_inline_schedule(node["rolling_window_schedule"],
+                                                      base_dir,
+                                                      "defaults.rolling_window_schedule",
+                                                      &defaults.rolling_schedule_preset_id,
+                                                      &defaults.rolling_schedule_preset_file);
     return defaults;
 }
 
 CliOptions make_base_cli_options(const BatchDefaults& defaults) {
     CliOptions options;
     options.output_path = "run_metrics.json";
+    options.rolling_window_preset_file = default_presets_library_path();
     options.seed = defaults.seed.value_or(options.seed);
     options.host_mode = defaults.host_mode.value_or(options.host_mode);
     options.nic_mode = defaults.nic_mode.value_or(options.nic_mode);
@@ -597,6 +691,12 @@ CliOptions make_base_cli_options(const BatchDefaults& defaults) {
     }
     if (defaults.rolling_schedule) {
         options.rolling_window_schedule = *defaults.rolling_schedule;
+    }
+    if (defaults.rolling_schedule_preset_id) {
+        options.rolling_window_preset_id = *defaults.rolling_schedule_preset_id;
+    }
+    if (defaults.rolling_schedule_preset_file) {
+        options.rolling_window_preset_file = *defaults.rolling_schedule_preset_file;
     }
     options.batch_mode = false;
     options.batch_manifest_path.clear();
@@ -705,8 +805,22 @@ BatchRunConfig parse_batch_run(const YAML::Node& run_node,
         config.options.rolling_sojourn_window_tasks = *rolling_overrides.sojourn_window_tasks;
     }
     if (const YAML::Node schedule_node = run_node["rolling_window_schedule"]) {
-        config.options.rolling_window_schedule = parse_inline_schedule(
-            schedule_node, base_dir, "batch run '" + config.name + "'.rolling_window_schedule");
+        std::optional<std::string> run_preset_id;
+        std::optional<std::filesystem::path> run_preset_file;
+        config.options.rolling_window_schedule =
+            parse_inline_schedule(schedule_node,
+                                  base_dir,
+                                  "batch run '" + config.name + "'.rolling_window_schedule",
+                                  &run_preset_id,
+                                  &run_preset_file);
+        if (run_preset_id) {
+            config.options.rolling_window_preset_id = *run_preset_id;
+        } else {
+            config.options.rolling_window_preset_id.reset();
+        }
+        if (run_preset_file) {
+            config.options.rolling_window_preset_file = *run_preset_file;
+        }
     }
 
     std::map<std::string, std::string> metadata = defaults.metadata;
@@ -811,6 +925,8 @@ struct ManifestOptions {
     std::map<std::string, std::string> metadata;
     bool has_rolling_schedule{false};
     std::vector<RollingWindowScheduleEvent> rolling_schedule;
+    std::optional<std::string> rolling_window_preset_id;
+    std::optional<std::filesystem::path> rolling_window_preset_file;
 };
 
 bool parse_manifest_file(const std::filesystem::path& manifest_path,
@@ -823,6 +939,7 @@ bool parse_manifest_file(const std::filesystem::path& manifest_path,
     }
 
     const std::filesystem::path base_dir = manifest_path.parent_path();
+    manifest.rolling_window_preset_file = default_presets_library_path();
     std::string line;
     std::size_t line_number = 0;
     bool in_service_modes = false;
@@ -960,6 +1077,10 @@ bool parse_manifest_file(const std::filesystem::path& manifest_path,
                 error = "manifest field 'rolling_window_schedule' requires a path";
                 return false;
             }
+            if (manifest.rolling_window_preset_id) {
+                error = "manifest cannot set both rolling_window_schedule and rolling_window_preset";
+                return false;
+            }
             try {
                 const auto path = resolve_path(value);
                 manifest.rolling_schedule = load_schedule_from_file(
@@ -969,6 +1090,22 @@ bool parse_manifest_file(const std::filesystem::path& manifest_path,
                 error = ex.what();
                 return false;
             }
+        } else if (key == "rolling_window_preset_file") {
+            if (value.empty()) {
+                error = "manifest field 'rolling_window_preset_file' requires a path";
+                return false;
+            }
+            manifest.rolling_window_preset_file = resolve_path(value);
+        } else if (key == "rolling_window_preset") {
+            if (value.empty()) {
+                error = "manifest field 'rolling_window_preset' requires a value";
+                return false;
+            }
+            if (manifest.has_rolling_schedule) {
+                error = "manifest cannot set both rolling_window_schedule and rolling_window_preset";
+                return false;
+            }
+            manifest.rolling_window_preset_id = value;
         } else if (key == "rolling_queue_window_us") {
             if (value.empty()) {
                 error = "manifest field 'rolling_queue_window_us' requires a value";
@@ -1025,6 +1162,20 @@ bool parse_manifest_file(const std::filesystem::path& manifest_path,
         }
     }
 
+    if (manifest.rolling_window_preset_id) {
+        try {
+            const auto library = manifest.rolling_window_preset_file.value_or(default_presets_library_path());
+            manifest.rolling_schedule = load_schedule_from_preset_library(
+                library,
+                *manifest.rolling_window_preset_id,
+                "manifest rolling_window_preset");
+            manifest.has_rolling_schedule = true;
+        } catch (const std::exception& ex) {
+            error = ex.what();
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -1034,6 +1185,7 @@ void write_report(const CliOptions& options,
                   const RunMetrics& run_metrics,
                   const PolicyRollingMetrics& rolling_metrics,
                   const std::vector<RunSummary::RollingWindowEventSummary>& window_events,
+                  const std::map<std::string, std::string>& metadata,
                   SimTime start_time,
                   SimTime finish_time,
                   Duration makespan,
@@ -1076,15 +1228,15 @@ void write_report(const CliOptions& options,
     out << "    \"nic\": \"" << service_mode_to_string(options.nic_mode) << "\"\n";
     out << "  },\n";
     out << "  \"metadata\": ";
-    if (options.metadata.empty()) {
+    if (metadata.empty()) {
         out << "{}"
             << ",\n";
     } else {
         out << "{\n";
         std::size_t count = 0;
-        for (const auto& [key, value] : options.metadata) {
+        for (const auto& [key, value] : metadata) {
             out << "    \"" << json_escape(key) << "\": \"" << json_escape(value) << "\"";
-            if (++count < options.metadata.size()) {
+            if (++count < metadata.size()) {
                 out << ",";
             }
             out << "\n";
@@ -1211,7 +1363,21 @@ void print_usage(std::ostream& out) {
         << "  --rolling-sojourn-window-tasks <N>   Number of recent tasks tracked in rolling sojourn stats (default "
         << BasicScheduler::kRollingSojournWindowTasks << ")\n"
         << "  --rolling-window-schedule <path>     YAML script describing rolling window configure/reset events\n"
+        << "  --rolling-window-preset <name>       Name of a preset from tools/cli/rolling_window_presets.yaml\n"
+        << "  --rolling-window-preset-file <path>  Override preset library path (default: tools/cli/rolling_window_presets.yaml)\n"
         << "  -h, --help               Show this message\n";
+    const auto preset_file = default_presets_library_path();
+    auto preset_names = list_presets_in_library(preset_file);
+    out << "\nRolling preset library: " << preset_file << "\n";
+    if (!preset_names.empty()) {
+        out << "Available presets:";
+        for (const auto& name : preset_names) {
+            out << " " << name;
+        }
+        out << "\n";
+    } else {
+        out << "(no presets discovered; create tools/cli/rolling_window_presets.yaml to enable)\n";
+    }
 }
 
 bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& error) {
@@ -1228,6 +1394,9 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
     bool rolling_util_cli = false;
     bool rolling_sojourn_cli = false;
     bool rolling_schedule_cli = false;
+    bool rolling_preset_cli = false;
+    std::optional<std::string> pending_cli_preset;
+    options.rolling_window_preset_file = default_presets_library_path();
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -1383,6 +1552,28 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
             }
             options.batch_mode = true;
             options.batch_manifest_path = argv[++i];
+        } else if (arg == "--rolling-window-preset-file") {
+            if (i + 1 >= argc) {
+                error = "--rolling-window-preset-file requires a path argument";
+                return false;
+            }
+            options.rolling_window_preset_file = argv[++i];
+        } else if (arg == "--rolling-window-preset") {
+            if (i + 1 >= argc) {
+                error = "--rolling-window-preset requires a value";
+                return false;
+            }
+            if (rolling_schedule_cli) {
+                error = "--rolling-window-preset cannot be combined with --rolling-window-schedule";
+                return false;
+            }
+            if (rolling_preset_cli) {
+                error = "--rolling-window-preset specified multiple times";
+                return false;
+            }
+            pending_cli_preset = argv[++i];
+            options.rolling_window_preset_id = *pending_cli_preset;
+            rolling_preset_cli = true;
         } else if (arg == "--rolling-window-schedule") {
             if (i + 1 >= argc) {
                 error = "--rolling-window-schedule requires a path argument";
@@ -1398,6 +1589,8 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
                 return false;
             }
             rolling_schedule_cli = true;
+            options.rolling_window_preset_id.reset();
+            pending_cli_preset.reset();
         } else {
             error = "unrecognised argument: " + arg;
             return false;
@@ -1469,9 +1662,34 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
         }
         if (!rolling_schedule_cli && manifest_options.has_rolling_schedule) {
             options.rolling_window_schedule = manifest_options.rolling_schedule;
+            if (manifest_options.rolling_window_preset_id) {
+                options.rolling_window_preset_id = *manifest_options.rolling_window_preset_id;
+            } else if (!rolling_preset_cli) {
+                options.rolling_window_preset_id.reset();
+            }
+            if (manifest_options.rolling_window_preset_file) {
+                options.rolling_window_preset_file = *manifest_options.rolling_window_preset_file;
+            }
+        } else if (!rolling_preset_cli && manifest_options.rolling_window_preset_file) {
+            options.rolling_window_preset_file = *manifest_options.rolling_window_preset_file;
         }
         if (options.metadata.empty() && !manifest_options.metadata.empty()) {
             options.metadata = manifest_options.metadata;
+        }
+    }
+
+    if (options.rolling_window_preset_id && options.rolling_window_schedule.empty()) {
+        const char* preset_context = rolling_preset_cli ? "--rolling-window-preset" : "rolling_window_preset";
+        const auto library_path = options.rolling_window_preset_file.empty()
+                                      ? default_presets_library_path()
+                                      : options.rolling_window_preset_file;
+        try {
+            options.rolling_window_schedule = load_schedule_from_preset_library(
+                library_path, *options.rolling_window_preset_id, preset_context);
+            options.rolling_window_preset_file = library_path;
+        } catch (const std::exception& ex) {
+            error = ex.what();
+            return false;
         }
     }
 
@@ -1500,7 +1718,13 @@ RunSummary run_simulation(const CliOptions& options) {
     rolling_config.utilization_window_us = options.rolling_util_window_us;
     rolling_config.sojourn_window_tasks = options.rolling_sojourn_window_tasks;
     BasicScheduler scheduler(std::move(inventory.pool), &service_model, rolling_config);
-    scheduler.set_policy_metadata(options.metadata);
+    std::map<std::string, std::string> scheduler_metadata = options.metadata;
+    if (options.rolling_window_preset_id) {
+        if (!scheduler_metadata.contains(kRollingPresetMetadataKey)) {
+            scheduler_metadata[kRollingPresetMetadataKey] = *options.rolling_window_preset_id;
+        }
+    }
+    scheduler.set_policy_metadata(scheduler_metadata);
 
     std::vector<RollingWindowScheduleEvent> scheduled_events = options.rolling_window_schedule;
     if (!scheduled_events.empty()) {
@@ -1590,6 +1814,7 @@ RunSummary run_simulation(const CliOptions& options) {
                  run_metrics,
                  rolling_metrics,
                  window_events,
+                 scheduler_metadata,
                  start_time,
                  finish_time,
                  makespan,

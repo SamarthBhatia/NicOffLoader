@@ -43,6 +43,8 @@ struct CliOptions {
     double rolling_util_window_us{BasicScheduler::kRollingUtilizationWindowUs};
     std::size_t rolling_sojourn_window_tasks{BasicScheduler::kRollingSojournWindowTasks};
     std::vector<RollingWindowScheduleEvent> rolling_window_schedule;
+    std::optional<std::string> rolling_window_preset_id;
+    std::filesystem::path rolling_window_preset_file;
 };
 
 struct RunSummary {

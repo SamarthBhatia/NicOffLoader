@@ -1,0 +1,44 @@
+schema_version: 0.1
+presets:
+  burst_sweep:
+    description: >
+      Clamps the queue horizon aggressively at the start of the run, issues a mid-burst reset, then tightens the
+      utilization + sojourn windows as the burst tails off so queue spikes stand out immediately.
+    events:
+      - at_us: 0.0
+        queue_us: 10000.0
+        reset_samples: true
+      - at_us: 40.0
+        action: reset
+      - at_us: 80.0
+        action: configure
+        util_us: 25000.0
+        sojourn_tasks: 32
+  periodic_reset:
+    description: >
+      Leaves the default windows in place but clears the rolling metrics at fixed intervals so long sweeps can compare
+      identical horizons without restarting the simulation.
+    events:
+      - at_us: 0.0
+        reset_samples: true
+      - at_us: 100.0
+        action: reset
+      - at_us: 200.0
+        action: reset
+      - at_us: 300.0
+        action: reset
+  nic_util_clamp:
+    description: >
+      Gradually shrinks the utilization window to focus on short-lived NIC spikes, then expands it again once the burst
+      passes so longer trends are visible.
+    events:
+      - at_us: 0.0
+        util_us: 50000.0
+        sojourn_tasks: 128
+        reset_samples: true
+      - at_us: 60.0
+        action: configure
+        util_us: 25000.0
+      - at_us: 140.0
+        action: configure
+        util_us: 70000.0

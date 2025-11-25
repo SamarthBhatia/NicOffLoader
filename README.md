@@ -144,7 +144,16 @@ events:
     sojourn_tasks: 64
 ```
 
-Every batch/manifest entry also accepts a `rolling_windows:` block with `queue_us`, `util_us`, and/or `sojourn_tasks` keys if you prefer YAML-based overrides, plus an optional `rolling_window_schedule:` block (either `events:` inline or `from_file: path/to/script.yaml`) so sweeps/CLI manifests replay the same configure/reset timelines as the headless CLI.
+Prefer not to maintain bespoke scripts? The repo ships `tools/cli/rolling_window_presets.yaml` with reusable bursts (`burst_sweep`), periodic resets, and utilization-clamp sweeps. Invoke them directly with:
+
+```bash
+  --rolling-window-preset burst_sweep \
+  --rolling-window-preset-file tools/cli/rolling_window_presets.yaml  # optional override
+```
+
+Whenever you pick a preset, the CLI injects `rolling_window_preset=<name>` into the run metadata (and batch CSVs) so downstream analysis can group results without scraping the raw `rolling_window_events` log.
+
+Every batch/manifest entry also accepts a `rolling_windows:` block with `queue_us`, `util_us`, and/or `sojourn_tasks` keys if you prefer YAML-based overrides, plus an optional `rolling_window_schedule:` block (either `events:` inline, `from_file: path/to/script.yaml`, or `preset: burst_sweep`) so sweeps/CLI manifests replay the same configure/reset timelines as the headless CLI. Simple CLI manifests can also set `rolling_window_preset: burst_sweep` (with an optional `rolling_window_preset_file` override) to reuse the stock library.
 
 #### DSL-driven policies
 
@@ -185,7 +194,13 @@ service_modes:
 ```
 
 Run it with `./build/tools/cli/nicloadoff_cli --config run_manifest.yaml`. Command-line flags still override manifest settings, and any `metadata:` entries are threaded into the JSON report (and batch CSVs) so experiment dashboards can join runs by scenario labels.
-To replay rolling adjustments inside a manifest, add `rolling_window_schedule: schedules/rolling_swaps.yaml` (paths are resolved relative to the manifest) and reuse the same `events:` format shown above.
+To replay rolling adjustments inside a manifest, add `rolling_window_schedule: schedules/rolling_swaps.yaml` (paths resolve relative to the manifest) or use a preset:
+
+```yaml
+rolling_window_schedule:
+  preset: burst_sweep
+  presets_file: tools/cli/rolling_window_presets.yaml  # optional
+```
 
 ### Batch CLI runs
 For policy sweeps, pass a batch manifest that lists multiple runs. Batch mode executes each entry,
@@ -225,6 +240,7 @@ runs:
 ```
 
 Each run inherits the default `rolling_window_schedule` (or can supply its own block with `events:` or `from_file:`) so every CSV/export captures the exact configure/reset timeline you expect.
+Prefer a stock preset? Replace the block with `rolling_window_schedule: { preset: nic_util_clamp }` (and optionally `presets_file: ...`) to pull from `tools/cli/rolling_window_presets.yaml`.
 
 Invoke it with:
 
@@ -252,7 +268,7 @@ The interactive TUI lets you inspect profiles, step through workloads, and exper
    ```bash
    ./build/tools/tui/nicloadoff_tui
    ```
-3. Use the on-screen hints—`↑/↓` navigate menus, `Tab` swaps between profile/workload lists, `Space` toggles run/pause, `n` steps a single event, `H`/`N` toggle deterministic vs. stochastic sampling, `m` cycles the `arrival_label` metadata (handy for DSL matches), `p` cycles policies (built-ins plus any DSL configs discovered under `policies/examples/`), `s` saves metrics, and `q` exits.
+3. Use the on-screen hints—`↑/↓` navigate menus, `Tab` swaps between profile/workload lists, `Space` toggles run/pause, `n` steps a single event, `H`/`N` toggle deterministic vs. stochastic sampling, `m` cycles the `arrival_label` metadata (handy for DSL matches), `p` cycles policies (built-ins plus any DSL configs discovered under `policies/examples/`), `c` cycles the rolling-window presets (with `C` clearing the selection and `?` toggling the preset catalogue), `s` saves metrics, and `q` exits.
 
 The status panel shows the active policy, admission limits (if any), live queue/resource metrics, and the cumulative policy waiting-reorder count + per-task ratio so you can watch hooks make progress while stepping through events. When a DSL config is selected, the panel also prints the YAML path to confirm which rule file is driving the run.
 
