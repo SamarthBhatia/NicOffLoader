@@ -40,6 +40,15 @@ class BasicScheduler {
         std::size_t sojourn_window_tasks{kRollingSojournWindowTasks};
     };
 
+    enum class RollingWindowEventType { kConfigure, kReset };
+
+    struct RollingWindowEventRecord {
+        SimTime timestamp{0.0};
+        RollingWindowConfig config{};
+        RollingWindowEventType type{RollingWindowEventType::kConfigure};
+        bool reset_samples{false};
+    };
+
     struct TaskStatus {
         TaskId id{};
         std::size_t stage_index{0};
@@ -86,6 +95,12 @@ class BasicScheduler {
     [[nodiscard]] PolicyStateSnapshot policy_state_snapshot() const;
     [[nodiscard]] std::size_t policy_waiting_reorders() const noexcept { return policy_waiting_reorders_; }
     [[nodiscard]] std::size_t policy_waiting_reorders_recent(std::size_t window) const;
+    [[nodiscard]] RollingWindowConfig rolling_window_config() const noexcept { return rolling_config_; }
+    void set_rolling_window_config(const RollingWindowConfig& config, bool reset_samples);
+    void reset_rolling_metrics();
+    [[nodiscard]] const std::vector<RollingWindowEventRecord>& rolling_window_events() const noexcept {
+        return rolling_window_events_;
+    }
 
   private:
     struct StageRuntime {
@@ -145,6 +160,7 @@ class BasicScheduler {
     void adjust_domain_usage(ResourceId resource_id, double delta);
     void record_utilization_sample(SimTime timestamp);
     void prune_waiting_reorder_marks();
+    void record_rolling_window_event(RollingWindowEventType type, bool reset_samples);
 
     struct DomainUsage {
         double capacity{0.0};
@@ -153,6 +169,7 @@ class BasicScheduler {
 
     RollingWindowConfig rolling_config_;
     RollingRuntimeMetrics rolling_metrics_;
+    std::vector<RollingWindowEventRecord> rolling_window_events_;
     DomainUsage host_usage_;
     DomainUsage nic_usage_;
 };

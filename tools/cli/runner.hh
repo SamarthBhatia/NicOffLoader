@@ -15,6 +15,16 @@
 
 namespace nicloadoff::cli {
 
+struct RollingWindowScheduleEvent {
+    enum class Action { kConfigure, kReset };
+    double timestamp_us{0.0};
+    Action action{Action::kConfigure};
+    bool reset_samples{false};
+    std::optional<double> queue_window_us;
+    std::optional<double> util_window_us;
+    std::optional<std::size_t> sojourn_window_tasks;
+};
+
 struct CliOptions {
     std::filesystem::path profile_path;
     std::filesystem::path workload_path;
@@ -32,6 +42,7 @@ struct CliOptions {
     double rolling_queue_window_us{BasicScheduler::kRollingQueueWindowUs};
     double rolling_util_window_us{BasicScheduler::kRollingUtilizationWindowUs};
     std::size_t rolling_sojourn_window_tasks{BasicScheduler::kRollingSojournWindowTasks};
+    std::vector<RollingWindowScheduleEvent> rolling_window_schedule;
 };
 
 struct RunSummary {
@@ -40,6 +51,15 @@ struct RunSummary {
     double throughput_per_sec{0.0};
     RunMetrics metrics;
     PolicyRollingMetrics rolling_metrics;
+    struct RollingWindowEventSummary {
+        double timestamp_us{0.0};
+        std::string type;
+        bool reset_samples{false};
+        double queue_window_us{0.0};
+        double util_window_us{0.0};
+        std::size_t sojourn_window_tasks{0};
+    };
+    std::vector<RollingWindowEventSummary> rolling_window_events;
 };
 
 void print_usage(std::ostream& out);

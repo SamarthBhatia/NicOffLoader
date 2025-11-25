@@ -37,6 +37,7 @@ BasicScheduler::BasicScheduler(ResourcePool resources,
     initialize_domain_usage();
     rolling_metrics_.record_queue_depth(current_time_, 0.0);
     record_utilization_sample(current_time_);
+    record_rolling_window_event(RollingWindowEventType::kConfigure, false);
 }
 
 void BasicScheduler::submit_task(const Task& task) {
@@ -512,6 +513,31 @@ std::size_t BasicScheduler::policy_waiting_reorders_recent(std::size_t window) c
                                   policy_waiting_reorder_marks_.end(),
                                   threshold);
     return static_cast<std::size_t>(std::distance(first, policy_waiting_reorder_marks_.end()));
+}
+
+void BasicScheduler::set_rolling_window_config(const RollingWindowConfig& config, bool reset_samples) {
+    rolling_config_ = config;
+    rolling_metrics_.set_queue_window(rolling_config_.queue_window_us, current_time_);
+    rolling_metrics_.set_utilization_window(rolling_config_.utilization_window_us, current_time_);
+    rolling_metrics_.set_sojourn_capacity(rolling_config_.sojourn_window_tasks);
+    if (reset_samples) {
+        rolling_metrics_.reset_samples();
+    }
+    record_rolling_window_event(RollingWindowEventType::kConfigure, reset_samples);
+}
+
+void BasicScheduler::reset_rolling_metrics() {
+    rolling_metrics_.reset_samples();
+    record_rolling_window_event(RollingWindowEventType::kReset, true);
+}
+
+void BasicScheduler::record_rolling_window_event(RollingWindowEventType type, bool reset_samples) {
+    RollingWindowEventRecord record{};
+    record.timestamp = current_time_;
+    record.config = rolling_config_;
+    record.type = type;
+    record.reset_samples = reset_samples;
+    rolling_window_events_.push_back(record);
 }
 
 PolicyStateSnapshot BasicScheduler::policy_state_snapshot() const {

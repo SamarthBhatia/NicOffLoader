@@ -82,8 +82,10 @@ TUI controls (always visible on the left panel):
 - `↑/↓` navigate, `Tab` swap menu, `Enter` load, `Space` run/pause, `n` step once, `r` reset seed
 - `H`/`N` toggle host/NIC stochastic modes; `m` cycles the `arrival_label` metadata sent to DSL policies
 - `p` cycles policies; `s` saves the current metrics report; `q` quits
+- `[`/`]` shrink/grow the queue rolling window (10 000 µs steps), `;`/`'` adjust the utilization window, `-`/`=` adjust the sojourn window (16-task steps), and `z` clears the rolling samples so you can sweep horizons mid-run
 
-The right-hand status panel now calls out the queue/util/sojourn rolling window sizes next to their live averages, so you can keep an eye on the policy’s inputs while stepping through events.
+The right-hand status panel now calls out the queue/util/sojourn rolling window sizes next to their live averages and sample counts, so you can keep an eye on the policy’s inputs (and resets) while stepping through events.
+When you press `s` to export metrics, the resulting JSON now includes the same `rolling_window_events` history the CLI produces, making it easy to replay adjustments from interactive sessions.
 
 ### Run Tests
 ```bash
@@ -115,6 +117,7 @@ Once you have a profile and workload YAML ready, invoke the single-run CLI and o
 ```
 
 Each summary line now echoes the configured queue/util/sojourn windows plus the latest rolling queue/utilization/sojourn averages so you can confirm the policy’s live inputs without cracking open the JSON report.
+Completed runs also emit a `rolling_window_events` array (and corresponding batch-CSV log) that lists every configure/reset action with timestamps, so downstream policy analysis can correlate metrics with on-the-fly tuning.
 
 Available policy identifiers match the TUI presets: `none`, `descending-id`, `limit-active-1`, `prefer-host`, `prefer-nic`, and the new `prefer-adaptive`, which leans toward NIC-heavy tasks whenever the rolling queue/utilization windows show the host saturating (and swings back toward host-heavy work once NIC contention dominates). Rolling stats flow into the CLI batch CSV/plots via the `rolling_*` columns, and the DSL can reference them directly through `when.metric` (see the list below) so scripted policies react to live queue/utilization spikes without dropping down to C++.
 
@@ -126,7 +129,22 @@ Rolling metrics now drive policy decisions as well, so you can tune the look-bac
   --rolling-sojourn-window-tasks <N>  # number of most recent tasks tracked in the sojourn stats (default 128)
 ```
 
-Every batch/manifest entry also accepts a `rolling_windows:` block with `queue_us`, `util_us`, and/or `sojourn_tasks` keys if you prefer YAML-based overrides.
+Need to replay the same adjustments without the TUI? Point `--rolling-window-schedule` at a YAML script listing timestamped events. Each entry sets `at_us`, defaults to `action: configure`, and can update `queue_us`, `util_us`, and/or `sojourn_tasks` (plus `reset_samples: true` to flush metrics). Use `action: reset` for a pure reset:
+
+```yaml
+events:
+  - at_us: 0.0
+    queue_us: 10000.0
+    reset_samples: true
+  - at_us: 80.0
+    action: reset
+  - at_us: 120.0
+    action: configure
+    util_us: 20000.0
+    sojourn_tasks: 64
+```
+
+Every batch/manifest entry also accepts a `rolling_windows:` block with `queue_us`, `util_us`, and/or `sojourn_tasks` keys if you prefer YAML-based overrides, plus an optional `rolling_window_schedule:` block (either `events:` inline or `from_file: path/to/script.yaml`) so sweeps/CLI manifests replay the same configure/reset timelines as the headless CLI.
 
 #### DSL-driven policies
 
@@ -167,6 +185,7 @@ service_modes:
 ```
 
 Run it with `./build/tools/cli/nicloadoff_cli --config run_manifest.yaml`. Command-line flags still override manifest settings, and any `metadata:` entries are threaded into the JSON report (and batch CSVs) so experiment dashboards can join runs by scenario labels.
+To replay rolling adjustments inside a manifest, add `rolling_window_schedule: schedules/rolling_swaps.yaml` (paths are resolved relative to the manifest) and reuse the same `events:` format shown above.
 
 ### Batch CLI runs
 For policy sweeps, pass a batch manifest that lists multiple runs. Batch mode executes each entry,
@@ -184,6 +203,13 @@ defaults:
   service_modes:
     host: deterministic
     nic: deterministic
+  rolling_window_schedule:
+    events:
+      - at_us: 0.0
+        queue_us: 10000
+        reset_samples: true
+      - at_us: 60.0
+        action: reset
 csv: experiments/policy_baseline/results/policy_baseline.csv
 runs:
   - name: prefer-host
@@ -197,6 +223,8 @@ runs:
     workload: workloads/examples/skew_dag.yaml
     policy: prefer-nic
 ```
+
+Each run inherits the default `rolling_window_schedule` (or can supply its own block with `events:` or `from_file:`) so every CSV/export captures the exact configure/reset timeline you expect.
 
 Invoke it with:
 

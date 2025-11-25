@@ -16,6 +16,10 @@ class RollingRuntimeMetrics {
     void record_queue_depth(SimTime timestamp, double depth);
     void record_utilization(SimTime timestamp, double host_ratio, double nic_ratio);
     void record_task(const TaskTiming& timing);
+    void set_queue_window(Duration queue_window_us, SimTime now);
+    void set_utilization_window(Duration utilization_window_us, SimTime now);
+    void set_sojourn_capacity(std::size_t sojourn_capacity);
+    void reset_samples();
 
     [[nodiscard]] PolicyRollingMetrics snapshot(SimTime now) const;
 
@@ -50,4 +54,3 @@ class RollingRuntimeMetrics {
 } // namespace nicloadoff
 
 #endif // NICLOADOFF_ROLLING_RUNTIME_METRICS_HH
-

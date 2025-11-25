@@ -11,6 +11,7 @@
 #include "nicloadoff/workload_loader.hh"
 #include "yaml-cpp/yaml.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -55,6 +56,16 @@ std::string service_mode_to_string(ServiceTimeMode mode) {
         return "deterministic";
     case ServiceTimeMode::kStochastic:
         return "stochastic";
+    }
+    return "unknown";
+}
+
+std::string rolling_event_type_to_string(BasicScheduler::RollingWindowEventType type) {
+    switch (type) {
+    case BasicScheduler::RollingWindowEventType::kConfigure:
+        return "configure";
+    case BasicScheduler::RollingWindowEventType::kReset:
+        return "reset";
     }
     return "unknown";
 }
@@ -148,6 +159,7 @@ struct BatchDefaults {
         std::optional<double> util_window_us;
         std::optional<std::size_t> sojourn_window_tasks;
     } rolling_windows;
+    std::optional<std::vector<RollingWindowScheduleEvent>> rolling_schedule;
 };
 
 struct BatchRunConfig {
@@ -170,6 +182,183 @@ std::filesystem::path resolve_relative_path(const std::filesystem::path& base, c
         path = base / path;
     }
     return path.lexically_normal();
+}
+
+void sort_schedule_events(std::vector<RollingWindowScheduleEvent>& events) {
+    std::stable_sort(events.begin(), events.end(), [](const auto& lhs, const auto& rhs) {
+        if (lhs.timestamp_us == rhs.timestamp_us) {
+            return static_cast<int>(lhs.action) < static_cast<int>(rhs.action);
+        }
+        return lhs.timestamp_us < rhs.timestamp_us;
+    });
+}
+
+RollingWindowScheduleEvent::Action parse_schedule_action(const std::string& value, const std::string& context) {
+    if (value == "configure") {
+        return RollingWindowScheduleEvent::Action::kConfigure;
+    }
+    if (value == "reset") {
+        return RollingWindowScheduleEvent::Action::kReset;
+    }
+    std::ostringstream oss;
+    oss << context << " has unknown action '" << value << "'";
+    throw std::runtime_error(oss.str());
+}
+
+RollingWindowScheduleEvent parse_schedule_entry(const YAML::Node& node, const std::string& context) {
+    if (!node.IsMap()) {
+        std::ostringstream oss;
+        oss << context << " must be a mapping";
+        throw std::runtime_error(oss.str());
+    }
+    RollingWindowScheduleEvent event;
+    const YAML::Node at = node["at_us"];
+    if (!at || !at.IsScalar()) {
+        std::ostringstream oss;
+        oss << context << " is missing 'at_us'";
+        throw std::runtime_error(oss.str());
+    }
+    event.timestamp_us = at.as<double>();
+    if (event.timestamp_us < 0.0) {
+        std::ostringstream oss;
+        oss << context << " at_us must be >= 0";
+        throw std::runtime_error(oss.str());
+    }
+    if (const YAML::Node action_node = node["action"]) {
+        if (!action_node.IsScalar()) {
+            std::ostringstream oss;
+            oss << context << " action must be a string";
+            throw std::runtime_error(oss.str());
+        }
+        event.action = parse_schedule_action(action_node.as<std::string>(), context + " action");
+    }
+    if (const YAML::Node reset = node["reset_samples"]) {
+        event.reset_samples = reset.as<bool>();
+    }
+    auto parse_positive_double = [&](const YAML::Node& value_node, const char* field) -> double {
+        if (!value_node.IsScalar()) {
+            std::ostringstream oss;
+            oss << context << " " << field << " must be numeric";
+            throw std::runtime_error(oss.str());
+        }
+        const double parsed = value_node.as<double>();
+        if (parsed <= 0.0) {
+            std::ostringstream oss;
+            oss << context << " " << field << " must be > 0";
+            throw std::runtime_error(oss.str());
+        }
+        return parsed;
+    };
+    bool has_window_override = false;
+    if (const YAML::Node queue = node["queue_us"]) {
+        event.queue_window_us = parse_positive_double(queue, "queue_us");
+        has_window_override = true;
+    }
+    if (const YAML::Node util = node["util_us"]) {
+        event.util_window_us = parse_positive_double(util, "util_us");
+        has_window_override = true;
+    }
+    if (const YAML::Node sojourn = node["sojourn_tasks"]) {
+        if (!sojourn.IsScalar()) {
+            std::ostringstream oss;
+            oss << context << " sojourn_tasks must be numeric";
+            throw std::runtime_error(oss.str());
+        }
+        const auto tasks = sojourn.as<std::size_t>();
+        if (tasks == 0) {
+            std::ostringstream oss;
+            oss << context << " sojourn_tasks must be > 0";
+            throw std::runtime_error(oss.str());
+        }
+        event.sojourn_window_tasks = tasks;
+        has_window_override = true;
+    }
+    if (event.action == RollingWindowScheduleEvent::Action::kConfigure) {
+        if (!has_window_override && !event.reset_samples) {
+            std::ostringstream oss;
+            oss << context << " configure event must change a window size or set reset_samples";
+            throw std::runtime_error(oss.str());
+        }
+    } else {
+        if (has_window_override) {
+            std::ostringstream oss;
+            oss << context << " reset event cannot set window sizes";
+            throw std::runtime_error(oss.str());
+        }
+        if (event.reset_samples) {
+            std::ostringstream oss;
+            oss << context << " reset event cannot set reset_samples";
+            throw std::runtime_error(oss.str());
+        }
+    }
+    return event;
+}
+
+std::vector<RollingWindowScheduleEvent> parse_schedule_sequence(const YAML::Node& node, const std::string& context) {
+    if (!node.IsSequence()) {
+        std::ostringstream oss;
+        oss << context << " must be a sequence";
+        throw std::runtime_error(oss.str());
+    }
+    std::vector<RollingWindowScheduleEvent> events;
+    events.reserve(node.size());
+    for (std::size_t idx = 0; idx < node.size(); ++idx) {
+        std::ostringstream entry_ctx;
+        entry_ctx << context << "[" << idx << "]";
+        events.push_back(parse_schedule_entry(node[idx], entry_ctx.str()));
+    }
+    sort_schedule_events(events);
+    return events;
+}
+
+std::vector<RollingWindowScheduleEvent> load_schedule_from_file(const std::filesystem::path& path,
+                                                                const std::string& context) {
+    YAML::Node root = YAML::LoadFile(path.string());
+    if (!root) {
+        throw std::runtime_error(context + " is empty");
+    }
+    std::vector<RollingWindowScheduleEvent> events;
+    if (root.IsSequence()) {
+        events = parse_schedule_sequence(root, context);
+    } else if (root.IsMap()) {
+        if (const YAML::Node events_node = root["events"]) {
+            events = parse_schedule_sequence(events_node, context + ".events");
+        } else {
+            throw std::runtime_error(context + " must provide an 'events' list");
+        }
+    } else {
+        throw std::runtime_error(context + " must be a sequence or mapping with an 'events' list");
+    }
+    return events;
+}
+
+std::vector<RollingWindowScheduleEvent> parse_inline_schedule(const YAML::Node& node,
+                                                              const std::filesystem::path& base_dir,
+                                                              const std::string& context) {
+    if (!node) {
+        return {};
+    }
+    if (node.IsSequence()) {
+        return parse_schedule_sequence(node, context);
+    }
+    if (node.IsMap()) {
+        if (const YAML::Node from_file = node["from_file"]) {
+            if (!from_file.IsScalar()) {
+                throw std::runtime_error(context + ".from_file must be a path string");
+            }
+            const auto path = resolve_relative_path(base_dir, from_file.as<std::string>());
+            return load_schedule_from_file(path, context + " file '" + path.string() + "'");
+        }
+        if (const YAML::Node events_node = node["events"]) {
+            return parse_schedule_sequence(events_node, context + ".events");
+        }
+        throw std::runtime_error(context + " must include 'from_file' or 'events'");
+    }
+    if (node.IsScalar()) {
+        const auto path = resolve_relative_path(base_dir, node.as<std::string>());
+        return load_schedule_from_file(path, context + " file '" + path.string() + "'");
+    }
+    throw std::runtime_error(context + " must be a sequence, mapping, or path string");
 }
 
 std::optional<std::filesystem::path> read_optional_path(const YAML::Node& node,
@@ -378,6 +567,10 @@ BatchDefaults parse_batch_defaults(const YAML::Node& node,
         }
     }
     defaults.rolling_windows = parse_rolling_windows(node["rolling_windows"], "defaults.rolling_windows");
+    if (const YAML::Node schedule = node["rolling_window_schedule"]) {
+        defaults.rolling_schedule =
+            parse_inline_schedule(schedule, base_dir, "defaults.rolling_window_schedule");
+    }
     return defaults;
 }
 
@@ -401,6 +594,9 @@ CliOptions make_base_cli_options(const BatchDefaults& defaults) {
     }
     if (defaults.policy_config) {
         options.policy_config_path = *defaults.policy_config;
+    }
+    if (defaults.rolling_schedule) {
+        options.rolling_window_schedule = *defaults.rolling_schedule;
     }
     options.batch_mode = false;
     options.batch_manifest_path.clear();
@@ -508,6 +704,10 @@ BatchRunConfig parse_batch_run(const YAML::Node& run_node,
     if (rolling_overrides.sojourn_window_tasks) {
         config.options.rolling_sojourn_window_tasks = *rolling_overrides.sojourn_window_tasks;
     }
+    if (const YAML::Node schedule_node = run_node["rolling_window_schedule"]) {
+        config.options.rolling_window_schedule = parse_inline_schedule(
+            schedule_node, base_dir, "batch run '" + config.name + "'.rolling_window_schedule");
+    }
 
     std::map<std::string, std::string> metadata = defaults.metadata;
     if (const YAML::Node metadata_node = run_node["metadata"]) {
@@ -609,6 +809,8 @@ struct ManifestOptions {
     std::optional<std::size_t> rolling_sojourn_window_tasks;
     std::optional<std::filesystem::path> policy_config_path;
     std::map<std::string, std::string> metadata;
+    bool has_rolling_schedule{false};
+    std::vector<RollingWindowScheduleEvent> rolling_schedule;
 };
 
 bool parse_manifest_file(const std::filesystem::path& manifest_path,
@@ -753,6 +955,20 @@ bool parse_manifest_file(const std::filesystem::path& manifest_path,
                 error = oss.str();
                 return false;
             }
+        } else if (key == "rolling_window_schedule") {
+            if (value.empty()) {
+                error = "manifest field 'rolling_window_schedule' requires a path";
+                return false;
+            }
+            try {
+                const auto path = resolve_path(value);
+                manifest.rolling_schedule = load_schedule_from_file(
+                    path, "manifest rolling_window_schedule '" + path.string() + "'");
+                manifest.has_rolling_schedule = true;
+            } catch (const std::exception& ex) {
+                error = ex.what();
+                return false;
+            }
         } else if (key == "rolling_queue_window_us") {
             if (value.empty()) {
                 error = "manifest field 'rolling_queue_window_us' requires a value";
@@ -817,6 +1033,7 @@ void write_report(const CliOptions& options,
                   const LoadedWorkload& workload_doc,
                   const RunMetrics& run_metrics,
                   const PolicyRollingMetrics& rolling_metrics,
+                  const std::vector<RunSummary::RollingWindowEventSummary>& window_events,
                   SimTime start_time,
                   SimTime finish_time,
                   Duration makespan,
@@ -933,6 +1150,23 @@ void write_report(const CliOptions& options,
     out << "      \"p99_latency_us\": " << format_double(rolling_metrics.sojourn.p99_latency, 6) << "\n";
     out << "    }\n";
     out << "  },\n";
+    out << "  \"rolling_window_events\": [\n";
+    for (std::size_t i = 0; i < window_events.size(); ++i) {
+        const auto& event = window_events[i];
+        out << "    {\n";
+        out << "      \"timestamp_us\": " << format_double(event.timestamp_us, 6) << ",\n";
+        out << "      \"type\": \"" << json_escape(event.type) << "\",\n";
+        out << "      \"queue_window_us\": " << format_double(event.queue_window_us, 6) << ",\n";
+        out << "      \"util_window_us\": " << format_double(event.util_window_us, 6) << ",\n";
+        out << "      \"sojourn_window_tasks\": " << event.sojourn_window_tasks << ",\n";
+        out << "      \"reset_samples\": " << (event.reset_samples ? "true" : "false") << "\n";
+        out << "    }";
+        if (i + 1 < window_events.size()) {
+            out << ",";
+        }
+        out << "\n";
+    }
+    out << "  ],\n";
     out << "  \"tasks\": [\n";
     for (std::size_t i = 0; i < run_metrics.tasks.size(); ++i) {
         const auto& timing = run_metrics.tasks[i];
@@ -976,6 +1210,7 @@ void print_usage(std::ostream& out) {
         << BasicScheduler::kRollingUtilizationWindowUs << ")\n"
         << "  --rolling-sojourn-window-tasks <N>   Number of recent tasks tracked in rolling sojourn stats (default "
         << BasicScheduler::kRollingSojournWindowTasks << ")\n"
+        << "  --rolling-window-schedule <path>     YAML script describing rolling window configure/reset events\n"
         << "  -h, --help               Show this message\n";
 }
 
@@ -992,6 +1227,7 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
     bool rolling_queue_cli = false;
     bool rolling_util_cli = false;
     bool rolling_sojourn_cli = false;
+    bool rolling_schedule_cli = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -1147,6 +1383,21 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
             }
             options.batch_mode = true;
             options.batch_manifest_path = argv[++i];
+        } else if (arg == "--rolling-window-schedule") {
+            if (i + 1 >= argc) {
+                error = "--rolling-window-schedule requires a path argument";
+                return false;
+            }
+            const std::filesystem::path schedule_path = argv[++i];
+            try {
+                options.rolling_window_schedule = load_schedule_from_file(
+                    schedule_path,
+                    std::string("--rolling-window-schedule '") + schedule_path.string() + "'");
+            } catch (const std::exception& ex) {
+                error = ex.what();
+                return false;
+            }
+            rolling_schedule_cli = true;
         } else {
             error = "unrecognised argument: " + arg;
             return false;
@@ -1216,6 +1467,9 @@ bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& er
         if (!rolling_sojourn_cli && manifest_options.rolling_sojourn_window_tasks) {
             options.rolling_sojourn_window_tasks = *manifest_options.rolling_sojourn_window_tasks;
         }
+        if (!rolling_schedule_cli && manifest_options.has_rolling_schedule) {
+            options.rolling_window_schedule = manifest_options.rolling_schedule;
+        }
         if (options.metadata.empty() && !manifest_options.metadata.empty()) {
             options.metadata = manifest_options.metadata;
         }
@@ -1248,6 +1502,36 @@ RunSummary run_simulation(const CliOptions& options) {
     BasicScheduler scheduler(std::move(inventory.pool), &service_model, rolling_config);
     scheduler.set_policy_metadata(options.metadata);
 
+    std::vector<RollingWindowScheduleEvent> scheduled_events = options.rolling_window_schedule;
+    if (!scheduled_events.empty()) {
+        sort_schedule_events(scheduled_events);
+    }
+    BasicScheduler::RollingWindowConfig active_config = scheduler.rolling_window_config();
+    std::size_t next_schedule_index = 0;
+    auto apply_scheduled_events = [&](SimTime now) {
+        constexpr double kScheduleEpsilon = 1e-9;
+        while (next_schedule_index < scheduled_events.size() &&
+               scheduled_events[next_schedule_index].timestamp_us <= now + kScheduleEpsilon) {
+            const auto& event = scheduled_events[next_schedule_index];
+            if (event.action == RollingWindowScheduleEvent::Action::kReset) {
+                scheduler.reset_rolling_metrics();
+            } else {
+                if (event.queue_window_us) {
+                    active_config.queue_window_us = *event.queue_window_us;
+                }
+                if (event.util_window_us) {
+                    active_config.utilization_window_us = *event.util_window_us;
+                }
+                if (event.sojourn_window_tasks) {
+                    active_config.sojourn_window_tasks = *event.sojourn_window_tasks;
+                }
+                scheduler.set_rolling_window_config(active_config, event.reset_samples);
+            }
+            ++next_schedule_index;
+        }
+    };
+    apply_scheduled_events(scheduler.current_time());
+
     std::unique_ptr<policy::PolicyHook> policy_hook;
     if (options.policy_id == "dsl") {
         if (!options.policy_config_path) {
@@ -1272,10 +1556,24 @@ RunSummary run_simulation(const CliOptions& options) {
         if (auto last = scheduler.last_event(); last && last->metadata.type == EventType::kTaskComplete) {
             dag_controller.handle_task_completion(last->metadata.id, scheduler.current_time(), scheduler);
         }
+        apply_scheduled_events(scheduler.current_time());
     }
 
     const RunMetrics run_metrics = scheduler.aggregated_metrics();
     const PolicyRollingMetrics rolling_metrics = scheduler.rolling_metrics_snapshot();
+    std::vector<RunSummary::RollingWindowEventSummary> window_events;
+    const auto& scheduler_events = scheduler.rolling_window_events();
+    window_events.reserve(scheduler_events.size());
+    for (const auto& event : scheduler_events) {
+        RunSummary::RollingWindowEventSummary summary{};
+        summary.timestamp_us = event.timestamp;
+        summary.type = rolling_event_type_to_string(event.type);
+        summary.reset_samples = event.reset_samples;
+        summary.queue_window_us = event.config.queue_window_us;
+        summary.util_window_us = event.config.utilization_window_us;
+        summary.sojourn_window_tasks = event.config.sojourn_window_tasks;
+        window_events.push_back(summary);
+    }
     const SimTime finish_time = scheduler.current_time();
     const SimTime start_time = min_arrival_time(workload);
     Duration makespan = finish_time - start_time;
@@ -1291,6 +1589,7 @@ RunSummary run_simulation(const CliOptions& options) {
                  workload_doc,
                  run_metrics,
                  rolling_metrics,
+                 window_events,
                  start_time,
                  finish_time,
                  makespan,
@@ -1302,6 +1601,7 @@ RunSummary run_simulation(const CliOptions& options) {
         .throughput_per_sec = throughput,
         .metrics = run_metrics,
         .rolling_metrics = rolling_metrics,
+        .rolling_window_events = std::move(window_events),
     };
 }
 
@@ -1316,11 +1616,30 @@ void write_batch_csv_header(std::ofstream& out, const std::vector<std::string>& 
            "rolling_host_util_samples,rolling_host_util_latest,rolling_host_util_average,rolling_host_util_peak,"
            "rolling_nic_util_samples,rolling_nic_util_latest,rolling_nic_util_average,rolling_nic_util_peak,"
            "rolling_sojourn_samples,rolling_sojourn_mean_queue_us,rolling_sojourn_mean_service_us,"
-           "rolling_sojourn_mean_latency_us,rolling_sojourn_p95_latency_us,rolling_sojourn_p99_latency_us";
+           "rolling_sojourn_mean_latency_us,rolling_sojourn_p95_latency_us,rolling_sojourn_p99_latency_us,"
+           "rolling_window_event_count,rolling_window_event_log";
     for (const auto& key : metadata_keys) {
         out << "," << key;
     }
     out << "\n";
+}
+
+std::string format_rolling_window_event_log(const std::vector<RunSummary::RollingWindowEventSummary>& events) {
+    if (events.empty()) {
+        return "";
+    }
+    std::ostringstream oss;
+    for (std::size_t i = 0; i < events.size(); ++i) {
+        const auto& event = events[i];
+        oss << event.type << "@"
+            << format_double(event.timestamp_us, 3) << "us(queue=" << format_double(event.queue_window_us, 0)
+            << "us util=" << format_double(event.util_window_us, 0) << "us sojourn="
+            << event.sojourn_window_tasks << " reset=" << (event.reset_samples ? "1" : "0") << ")";
+        if (i + 1 < events.size()) {
+            oss << "|";
+        }
+    }
+    return oss.str();
 }
 
 void append_batch_csv_row(std::ofstream& out,
@@ -1369,7 +1688,9 @@ void append_batch_csv_row(std::ofstream& out,
         << format_double(rolling.sojourn.mean_service_time) << ","
         << format_double(rolling.sojourn.mean_latency) << ","
         << format_double(rolling.sojourn.p95_latency) << ","
-        << format_double(rolling.sojourn.p99_latency);
+        << format_double(rolling.sojourn.p99_latency) << ","
+        << result.summary.rolling_window_events.size() << ","
+        << format_rolling_window_event_log(result.summary.rolling_window_events);
     for (const auto& key : metadata_keys) {
         auto it = result.metadata.find(key);
         if (it != result.metadata.end()) {

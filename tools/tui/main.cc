@@ -80,6 +80,16 @@ struct PolicyChoice {
     return "Unknown";
 }
 
+[[nodiscard]] std::string rolling_event_type_to_string(BasicScheduler::RollingWindowEventType type) {
+    switch (type) {
+    case BasicScheduler::RollingWindowEventType::kConfigure:
+        return "configure";
+    case BasicScheduler::RollingWindowEventType::kReset:
+        return "reset";
+    }
+    return "unknown";
+}
+
 [[nodiscard]] std::string format_double(double value, int precision = 3) {
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(precision) << value;
@@ -435,6 +445,21 @@ class SimulationSession {
         finished_ = false;
     }
 
+    bool update_rolling_config(BasicScheduler::RollingWindowConfig config, bool reset_samples) {
+        rolling_config_ = config;
+        if (!scheduler_) {
+            return false;
+        }
+        scheduler_->set_rolling_window_config(rolling_config_, reset_samples);
+        return true;
+    }
+
+    void reset_rolling_metrics() {
+        if (scheduler_) {
+            scheduler_->reset_rolling_metrics();
+        }
+    }
+
     bool step() {
         if (finished_ || !scheduler_) {
             return false;
@@ -519,6 +544,14 @@ class SimulationSession {
             return kEmpty;
         }
         return scheduler_->completed_metrics();
+    }
+
+    [[nodiscard]] const std::vector<BasicScheduler::RollingWindowEventRecord>& rolling_window_events() const noexcept {
+        static const std::vector<BasicScheduler::RollingWindowEventRecord> kEmptyEvents;
+        if (!scheduler_) {
+            return kEmptyEvents;
+        }
+        return scheduler_->rolling_window_events();
     }
 
   private:
@@ -739,6 +772,26 @@ struct AppState {
         auto_run = false;
     }
 
+    bool apply_rolling_config(bool reset_samples) {
+        BasicScheduler::RollingWindowConfig config;
+        config.queue_window_us = rolling_queue_window_us;
+        config.utilization_window_us = rolling_util_window_us;
+        config.sojourn_window_tasks = rolling_sojourn_window_tasks;
+        if (session) {
+            return session->update_rolling_config(config, reset_samples);
+        }
+        return true;
+    }
+
+    void reset_rolling_samples() {
+        if (!session) {
+            status_message = "Load a profile/workload first.";
+            return;
+        }
+        session->reset_rolling_metrics();
+        status_message = "Rolling metrics reset.";
+    }
+
     [[nodiscard]] SimulationSnapshot snapshot() const {
         if (!session) {
             return {};
@@ -862,6 +915,24 @@ bool write_metrics_report(const SimulationSession& session,
     out << "      \"p99_us\": " << format_double(snapshot.rolling_sojourn_p99, 6) << "\n";
     out << "    }\n";
     out << "  },\n";
+    out << "  \"rolling_window_events\": [\n";
+    const auto& window_events = session.rolling_window_events();
+    for (std::size_t i = 0; i < window_events.size(); ++i) {
+        const auto& event = window_events[i];
+        out << "    {\n";
+        out << "      \"timestamp_us\": " << format_double(event.timestamp, 6) << ",\n";
+        out << "      \"type\": \"" << rolling_event_type_to_string(event.type) << "\",\n";
+        out << "      \"queue_window_us\": " << format_double(event.config.queue_window_us, 6) << ",\n";
+        out << "      \"util_window_us\": " << format_double(event.config.utilization_window_us, 6) << ",\n";
+        out << "      \"sojourn_window_tasks\": " << event.config.sojourn_window_tasks << ",\n";
+        out << "      \"reset_samples\": " << (event.reset_samples ? "true" : "false") << "\n";
+        out << "    }";
+        if (i + 1 < window_events.size()) {
+            out << ",";
+        }
+        out << "\n";
+    }
+    out << "  ],\n";
 
     out << "  \"tasks\": [\n";
     const auto& task_timings = run_metrics.tasks;
@@ -930,6 +1001,10 @@ void draw_instructions(WINDOW* win, int start_row) {
         "  N     Toggle NIC service mode",
         "  m     Cycle arrival_label metadata",
         "  p/P   Cycle policy hook (built-ins + DSL configs under policies/examples/)",
+        "  [ / ] Adjust queue window (-/+10k us)",
+        "  ;/'   Adjust util window (-/+10k us)",
+        "  -/=   Adjust sojourn window (-/+16 tasks)",
+        "  z     Reset rolling metrics samples",
         "  s     Save metrics to JSON",
         "  q     Quit",
     };
@@ -1043,17 +1118,20 @@ void draw_right_panel(WINDOW* win, const AppState& state, const SimulationSnapsh
                    " tasks): " + format_double(snapshot.policy_waiting_reorders_per_task_recent, 4));
     }
     if (snapshot.rolling_queue_samples > 0) {
-        print_line("  Rolling queue avg: " + format_double(snapshot.rolling_queue_average, 3) + " (peak " +
+        print_line("  Rolling queue avg (" + std::to_string(snapshot.rolling_queue_samples) + " samples): " +
+                   format_double(snapshot.rolling_queue_average, 3) + " (peak " +
                    format_double(snapshot.rolling_queue_peak, 3) + ", latest " +
                    format_double(snapshot.rolling_queue_latest, 3) + ")");
     }
     if (snapshot.rolling_host_util_samples > 0) {
-        print_line("  Rolling util avg (host/nic): " + format_double(snapshot.rolling_host_util_average, 3) + " / " +
+        print_line("  Rolling util avg (" + std::to_string(snapshot.rolling_host_util_samples) +
+                   " samples host/nic): " + format_double(snapshot.rolling_host_util_average, 3) + " / " +
                    format_double(snapshot.rolling_nic_util_average, 3));
     }
     if (snapshot.rolling_sojourn_samples > 0) {
-        print_line("  Rolling sojourn mean/p95/p99 (us): " + format_double(snapshot.rolling_sojourn_mean_latency, 3) +
-                   " / " + format_double(snapshot.rolling_sojourn_p95, 3) + " / " +
+        print_line("  Rolling sojourn mean/p95/p99 (" + std::to_string(snapshot.rolling_sojourn_samples) +
+                   " tasks): " + format_double(snapshot.rolling_sojourn_mean_latency, 3) + " / " +
+                   format_double(snapshot.rolling_sojourn_p95, 3) + " / " +
                    format_double(snapshot.rolling_sojourn_p99, 3));
     }
 
@@ -1199,6 +1277,13 @@ int main() {
     auto last_step_time = steady_clock::now();
     const auto step_interval = 150ms;
     bool running = true;
+    constexpr double kQueueWindowStepUs = 10'000.0;
+    constexpr double kUtilWindowStepUs = 10'000.0;
+    constexpr double kMinRollingWindowUs = 1'000.0;
+    constexpr double kMaxRollingWindowUs = 5'000'000.0;
+    constexpr std::size_t kSojournWindowStep = 16;
+    constexpr std::size_t kMinSojournWindowTasks = 1;
+    constexpr std::size_t kMaxSojournWindowTasks = 4096;
 
     while (running) {
         int ch = getch();
@@ -1316,6 +1401,78 @@ int main() {
                         state.status_message = "Failed to write metrics file.";
                     }
                 }
+                break;
+            case '[': {
+                double next_value = state.rolling_queue_window_us - kQueueWindowStepUs;
+                if (next_value < kMinRollingWindowUs) {
+                    next_value = kMinRollingWindowUs;
+                }
+                state.rolling_queue_window_us = std::min(next_value, kMaxRollingWindowUs);
+                state.apply_rolling_config(false);
+                state.status_message =
+                    "Queue rolling window set to " + format_double(state.rolling_queue_window_us, 0) + " us.";
+                break;
+            }
+            case ']': {
+                double next_value = state.rolling_queue_window_us + kQueueWindowStepUs;
+                if (next_value > kMaxRollingWindowUs) {
+                    next_value = kMaxRollingWindowUs;
+                }
+                state.rolling_queue_window_us = std::max(next_value, kMinRollingWindowUs);
+                state.apply_rolling_config(false);
+                state.status_message =
+                    "Queue rolling window set to " + format_double(state.rolling_queue_window_us, 0) + " us.";
+                break;
+            }
+            case ';': {
+                double next_value = state.rolling_util_window_us - kUtilWindowStepUs;
+                if (next_value < kMinRollingWindowUs) {
+                    next_value = kMinRollingWindowUs;
+                }
+                state.rolling_util_window_us = std::min(next_value, kMaxRollingWindowUs);
+                state.apply_rolling_config(false);
+                state.status_message =
+                    "Utilization rolling window set to " + format_double(state.rolling_util_window_us, 0) + " us.";
+                break;
+            }
+            case '\'': {
+                double next_value = state.rolling_util_window_us + kUtilWindowStepUs;
+                if (next_value > kMaxRollingWindowUs) {
+                    next_value = kMaxRollingWindowUs;
+                }
+                state.rolling_util_window_us = std::max(next_value, kMinRollingWindowUs);
+                state.apply_rolling_config(false);
+                state.status_message =
+                    "Utilization rolling window set to " + format_double(state.rolling_util_window_us, 0) + " us.";
+                break;
+            }
+            case '-': {
+                std::size_t current = state.rolling_sojourn_window_tasks;
+                if (current > kMinSojournWindowTasks) {
+                    const std::size_t delta = std::min(kSojournWindowStep, current - kMinSojournWindowTasks);
+                    state.rolling_sojourn_window_tasks = current - delta;
+                    state.apply_rolling_config(false);
+                }
+                state.status_message = "Sojourn window set to " +
+                                       std::to_string(state.rolling_sojourn_window_tasks) + " tasks.";
+                break;
+            }
+            case '=':
+            case '+': {
+                std::size_t current = state.rolling_sojourn_window_tasks;
+                if (current < kMaxSojournWindowTasks) {
+                    const std::size_t space = kMaxSojournWindowTasks - current;
+                    const std::size_t delta = std::min(kSojournWindowStep, space);
+                    state.rolling_sojourn_window_tasks = current + delta;
+                    state.apply_rolling_config(false);
+                }
+                state.status_message = "Sojourn window set to " +
+                                       std::to_string(state.rolling_sojourn_window_tasks) + " tasks.";
+                break;
+            }
+            case 'z':
+            case 'Z':
+                state.reset_rolling_samples();
                 break;
             case 'q':
             case 'Q':

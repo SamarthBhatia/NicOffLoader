@@ -162,4 +162,34 @@ PolicyRollingMetrics RollingRuntimeMetrics::snapshot(SimTime now) const {
     return metrics;
 }
 
+void RollingRuntimeMetrics::set_queue_window(Duration queue_window_us, SimTime now) {
+    queue_window_ = queue_window_us;
+    trim_queue_samples(now);
+}
+
+void RollingRuntimeMetrics::set_utilization_window(Duration utilization_window_us, SimTime now) {
+    utilization_window_ = utilization_window_us;
+    trim_utilization_samples(now);
+}
+
+void RollingRuntimeMetrics::set_sojourn_capacity(std::size_t sojourn_capacity) {
+    sojourn_capacity_ = sojourn_capacity;
+    if (sojourn_capacity_ == 0) {
+        recent_tasks_.clear();
+        return;
+    }
+    while (recent_tasks_.size() > sojourn_capacity_) {
+        recent_tasks_.pop_front();
+    }
+}
+
+void RollingRuntimeMetrics::reset_samples() {
+    queue_samples_.clear();
+    utilization_samples_.clear();
+    recent_tasks_.clear();
+    latest_queue_depth_ = 0.0;
+    latest_host_utilization_ = 0.0;
+    latest_nic_utilization_ = 0.0;
+}
+
 } // namespace nicloadoff

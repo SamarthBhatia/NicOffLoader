@@ -78,6 +78,7 @@ int main() {
     assert_contains(content, "\"run\": {", "expected run section");
     assert_contains(content, "\"aggregates\": {", "expected aggregates section");
     assert_contains(content, "\"rolling_metrics\": {", "expected rolling metrics section");
+    assert_contains(content, "\"rolling_window_events\": [", "expected rolling window events section");
     assert_contains(content, "\"tasks\": [", "expected task list section");
     assert_contains(content, "\"completed_tasks\": 2", "expected completed task count");
     assert_contains(content, "\"throughput_tasks_per_sec\": 400000.000000", "expected throughput value");
