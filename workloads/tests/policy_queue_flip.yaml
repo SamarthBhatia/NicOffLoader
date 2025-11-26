@@ -30,3 +30,12 @@ tasks:
             units: 16
           - resource: nic_cpu
             units: 8
+  - id: 203
+    arrival_time: 0.0
+    stages:
+      - deterministic_service_time: 12.0
+        demands:
+          - resource: host_cpu
+            units: 16
+          - resource: nic_cpu
+            units: 1

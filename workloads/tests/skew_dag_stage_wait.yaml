@@ -1,0 +1,128 @@
+schema_version: 0.1
+workload_name: skew_dag_stage_wait
+description: >
+  Deterministic DAG workload mirroring the skew DAG stages so DSL policies can
+  target specific nodes. db_lookup stages collide on host resources while one
+  task carries higher NIC demand, creating a queue that stage-aware policies
+  can reorder.
+tasks:
+  - id: 900
+    arrival_time: 0.0
+    dag:
+      nodes:
+        - name: db_lookup
+          stage:
+            deterministic_service_time: 12.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 14.0
+              - resource: nic_cpu
+                units: 1.0
+          successors:
+            - serialize_resp
+        - name: serialize_resp
+          stage:
+            deterministic_service_time: 2.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 2.0
+      entry_points:
+        - db_lookup
+  - id: 950
+    arrival_time: 0.0
+    dag:
+      nodes:
+        - name: db_lookup
+          stage:
+            deterministic_service_time: 12.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 10.0
+              - resource: nic_cpu
+                units: 6.0
+          successors:
+            - serialize_resp
+        - name: serialize_resp
+          stage:
+            deterministic_service_time: 2.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 2.0
+      entry_points:
+        - db_lookup
+  - id: 980
+    arrival_time: 0.0
+    dag:
+      nodes:
+        - name: db_lookup
+          stage:
+            deterministic_service_time: 12.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 13.0
+              - resource: nic_cpu
+                units: 1.0
+          successors:
+            - serialize_resp
+        - name: serialize_resp
+          stage:
+            deterministic_service_time: 2.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 2.0
+      entry_points:
+        - db_lookup
+  - id: 990
+    arrival_time: 0.0
+    dag:
+      nodes:
+        - name: db_lookup
+          stage:
+            deterministic_service_time: 12.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 12.0
+              - resource: nic_cpu
+                units: 1.0
+          successors:
+            - serialize_resp
+        - name: serialize_resp
+          stage:
+            deterministic_service_time: 2.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 2.0
+      entry_points:
+        - db_lookup

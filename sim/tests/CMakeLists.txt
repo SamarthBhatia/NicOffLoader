@@ -83,6 +83,11 @@ target_link_libraries(policy_dsl_match_test PRIVATE nicloadoff_sim)
 
 add_test(NAME policy_dsl_match_test COMMAND policy_dsl_match_test)
 
+add_executable(policy_dsl_mocked_state_test policy_dsl_mocked_state_test.cc)
+target_link_libraries(policy_dsl_mocked_state_test PRIVATE nicloadoff_sim)
+
+add_test(NAME policy_dsl_mocked_state_test COMMAND policy_dsl_mocked_state_test)
+
 add_executable(policy_dsl_rolling_metrics_test policy_dsl_rolling_metrics_test.cc)
 target_link_libraries(policy_dsl_rolling_metrics_test PRIVATE nicloadoff_sim)
 

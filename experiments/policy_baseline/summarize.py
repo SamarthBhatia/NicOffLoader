@@ -37,6 +37,9 @@ RATIO_FIELD = ("reorders_per_task", "waiting_reorders_per_task")
 RECENT_WAITING_FIELD = ("reorders_recent", "waiting_reorders_recent")
 RECENT_RATIO_FIELD = ("reorders_per_task_recent", "waiting_reorders_per_task_recent")
 RECENT_WINDOW_FIELD = ("recent_window", "waiting_reorder_recent_task_count")
+ADMISSION_BLOCKS_FIELD = ("admission_blocked", "admission_limited_tasks")
+ADMISSION_LIMIT_FIELD = ("admission_limit", "admission_limit_last")
+ADMISSION_ACTIVE_FIELD = ("admission_active", "admission_limit_active")
 ROLLING_COLUMNS = [
     ("queue_avg", "rolling_queue_average"),
     ("queue_peak", "rolling_queue_peak"),
@@ -116,7 +119,17 @@ def apply_filters(rows: List[Dict[str, str]], filters: List[Tuple[str, str]]) ->
 
 def format_table(rows: List[Dict[str, str]], extra_columns: List[str]) -> str:
     headers = ["run_name", "policy"] + [label for label, _ in NUMERIC_METRICS]
-    headers += [PEAK_FIELD[0], WAITING_FIELD[0], RATIO_FIELD[0], RECENT_WAITING_FIELD[0], RECENT_RATIO_FIELD[0], RECENT_WINDOW_FIELD[0]]
+    headers += [
+        PEAK_FIELD[0],
+        WAITING_FIELD[0],
+        RATIO_FIELD[0],
+        RECENT_WAITING_FIELD[0],
+        RECENT_RATIO_FIELD[0],
+        RECENT_WINDOW_FIELD[0],
+        ADMISSION_BLOCKS_FIELD[0],
+        ADMISSION_LIMIT_FIELD[0],
+        ADMISSION_ACTIVE_FIELD[0],
+    ]
     headers += [label for label, _ in ROLLING_COLUMNS]
     headers += extra_columns
     formatted = []
@@ -133,6 +146,9 @@ def format_table(rows: List[Dict[str, str]], extra_columns: List[str]) -> str:
         entry[RECENT_WAITING_FIELD[0]] = row.get(RECENT_WAITING_FIELD[1], "")
         entry[RECENT_RATIO_FIELD[0]] = f"{compute_recent_reorder_ratio(row):.4f}"
         entry[RECENT_WINDOW_FIELD[0]] = row.get(RECENT_WINDOW_FIELD[1], "")
+        entry[ADMISSION_BLOCKS_FIELD[0]] = row.get(ADMISSION_BLOCKS_FIELD[1], "")
+        entry[ADMISSION_LIMIT_FIELD[0]] = row.get(ADMISSION_LIMIT_FIELD[1], "")
+        entry[ADMISSION_ACTIVE_FIELD[0]] = normalize_bool(row.get(ADMISSION_ACTIVE_FIELD[1]))
         for label, field in ROLLING_COLUMNS:
             value = get_float(row, field)
             entry[label] = f"{value:.3f}" if value is not None else ""
@@ -157,7 +173,17 @@ def format_grouped_table(rows: List[Dict[str, str]],
     headers = (
         [group_by, "count"]
         + [label for label, _ in NUMERIC_METRICS]
-        + [PEAK_FIELD[0], WAITING_FIELD[0], RATIO_FIELD[0], RECENT_WAITING_FIELD[0], RECENT_RATIO_FIELD[0], RECENT_WINDOW_FIELD[0]]
+        + [
+            PEAK_FIELD[0],
+            WAITING_FIELD[0],
+            RATIO_FIELD[0],
+            RECENT_WAITING_FIELD[0],
+            RECENT_RATIO_FIELD[0],
+            RECENT_WINDOW_FIELD[0],
+            ADMISSION_BLOCKS_FIELD[0],
+            ADMISSION_LIMIT_FIELD[0],
+            ADMISSION_ACTIVE_FIELD[0],
+        ]
         + [label for label, _ in ROLLING_COLUMNS]
         + extra_columns
     )
@@ -181,6 +207,9 @@ def format_grouped_table(rows: List[Dict[str, str]],
         formatted_row[RECENT_WAITING_FIELD[0]] = f"{row[RECENT_WAITING_FIELD[0]]:.2f}"
         formatted_row[RECENT_RATIO_FIELD[0]] = f"{row[RECENT_RATIO_FIELD[0]]:.4f}"
         formatted_row[RECENT_WINDOW_FIELD[0]] = f"{row[RECENT_WINDOW_FIELD[0]]:.2f}"
+        formatted_row[ADMISSION_BLOCKS_FIELD[0]] = f"{row[ADMISSION_BLOCKS_FIELD[0]]:.2f}"
+        formatted_row[ADMISSION_LIMIT_FIELD[0]] = f"{row[ADMISSION_LIMIT_FIELD[0]]:.2f}"
+        formatted_row[ADMISSION_ACTIVE_FIELD[0]] = f"{row[ADMISSION_ACTIVE_FIELD[0]]:.2f}"
         for label, field in ROLLING_COLUMNS:
             value = coerce_float(row.get(field))
             formatted_row[label] = f"{value:.3f}"
@@ -219,6 +248,15 @@ def aggregate_rows(rows: List[Dict[str, str]],
         total_recent_reorders = sum(recent_waiting_values)
         aggregate[RECENT_RATIO_FIELD[0]] = total_recent_reorders / total_recent_tasks if total_recent_tasks > 0.0 else 0.0
         aggregate[RECENT_WINDOW_FIELD[0]] = total_recent_tasks / len(entries) if entries else 0.0
+        blocks = [float(entry.get(ADMISSION_BLOCKS_FIELD[1], 0.0) or 0.0) for entry in entries]
+        aggregate[ADMISSION_BLOCKS_FIELD[0]] = sum(blocks) / len(entries) if entries else 0.0
+        limits = [float(entry.get(ADMISSION_LIMIT_FIELD[1], 0.0) or 0.0) for entry in entries]
+        aggregate[ADMISSION_LIMIT_FIELD[0]] = sum(limits) / len(entries) if entries else 0.0
+        active_flags = [
+            1.0 if str(entry.get(ADMISSION_ACTIVE_FIELD[1], "")).strip().lower() in {"true", "1", "yes"} else 0.0
+            for entry in entries
+        ]
+        aggregate[ADMISSION_ACTIVE_FIELD[0]] = sum(active_flags) / len(entries) if entries else 0.0
         for _, field in ROLLING_COLUMNS:
             values = [float(entry.get(field, 0.0) or 0.0) for entry in entries]
             aggregate[field] = sum(values) / len(entries) if entries else 0.0
@@ -299,3 +337,12 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+def normalize_bool(value: str | None) -> str:
+    if value is None or value == "":
+        return ""
+    lower = value.strip().lower()
+    if lower in {"1", "true", "yes"}:
+        return "yes"
+    if lower in {"0", "false", "no"}:
+        return "no"
+    return value

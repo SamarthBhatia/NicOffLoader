@@ -85,6 +85,7 @@ class BasicScheduler {
     [[nodiscard]] std::size_t event_queue_size() const noexcept { return queue_.size(); }
     [[nodiscard]] std::size_t waiting_queue_size() const noexcept { return waiting_queue_.size(); }
     [[nodiscard]] std::size_t peak_waiting_queue_depth() const noexcept { return peak_waiting_queue_depth_; }
+    [[nodiscard]] std::optional<std::size_t> admission_limit() const noexcept { return admission_limit_; }
     [[nodiscard]] std::vector<TaskId> waiting_tasks() const;
     [[nodiscard]] std::vector<TaskStatus> task_statuses() const;
     [[nodiscard]] std::size_t events_processed() const noexcept { return events_processed_; }
@@ -95,6 +96,12 @@ class BasicScheduler {
     [[nodiscard]] PolicyStateSnapshot policy_state_snapshot() const;
     [[nodiscard]] std::size_t policy_waiting_reorders() const noexcept { return policy_waiting_reorders_; }
     [[nodiscard]] std::size_t policy_waiting_reorders_recent(std::size_t window) const;
+    [[nodiscard]] std::optional<std::size_t> policy_last_admission_limit() const noexcept {
+        return policy_last_admission_limit_;
+    }
+    [[nodiscard]] std::size_t policy_admission_blocked_tasks() const noexcept {
+        return policy_admission_blocked_tasks_;
+    }
     [[nodiscard]] RollingWindowConfig rolling_window_config() const noexcept { return rolling_config_; }
     void set_rolling_window_config(const RollingWindowConfig& config, bool reset_samples);
     void reset_rolling_metrics();
@@ -140,6 +147,8 @@ class BasicScheduler {
     std::size_t policy_waiting_reorders_{0};
     std::deque<std::size_t> policy_waiting_reorder_marks_;
     std::map<std::string, std::string> scenario_metadata_;
+    std::optional<std::size_t> policy_last_admission_limit_;
+    std::size_t policy_admission_blocked_tasks_{0};
 
     void handle_event(const ScheduledEvent& event);
     void handle_task_arrival(TaskId id, SimTime timestamp);

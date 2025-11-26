@@ -4,6 +4,7 @@
 #include "nicloadoff/sim_types.hh"
 
 #include <cstddef>
+#include <optional>
 #include <vector>
 
 namespace nicloadoff {
@@ -45,6 +46,9 @@ struct PolicyRunMetrics {
     std::size_t waiting_reorders_recent{0};
     std::size_t waiting_reorder_recent_task_count{0};
     double waiting_reorders_per_task_recent{0.0};
+    std::size_t admission_limited_tasks{0};
+    std::optional<std::size_t> admission_limit_last;
+    bool admission_limit_active{false};
 };
 
 struct RunMetrics {

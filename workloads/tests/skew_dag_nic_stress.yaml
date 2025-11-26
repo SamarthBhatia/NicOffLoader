@@ -1,0 +1,158 @@
+schema_version: 0.1
+workload_name: skew_dag_nic_stress
+description: >
+  Deterministic skew-DAG slice with simultaneous arrivals so the NIC-heavy
+  db_lookup stages drive high NIC utilization. More than three tasks compete
+  for execution, allowing the DSL admission clamp to build a waiting queue
+  that stage-aware reorders can manipulate deterministically.
+tasks:
+  - id: 1100
+    arrival_time: 0.0
+    dag:
+      nodes:
+        - name: db_lookup
+          stage:
+            deterministic_service_time: 18.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 9.0
+              - resource: nic_cpu
+                units: 2.0
+          successors:
+            - serialize_resp
+        - name: serialize_resp
+          stage:
+            deterministic_service_time: 3.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 2.0
+      entry_points:
+        - db_lookup
+  - id: 1200
+    arrival_time: 0.0
+    dag:
+      nodes:
+        - name: db_lookup
+          stage:
+            deterministic_service_time: 18.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 8.0
+              - resource: nic_cpu
+                units: 2.0
+          successors:
+            - serialize_resp
+        - name: serialize_resp
+          stage:
+            deterministic_service_time: 3.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 2.0
+      entry_points:
+        - db_lookup
+  - id: 1300
+    arrival_time: 0.0
+    dag:
+      nodes:
+        - name: db_lookup
+          stage:
+            deterministic_service_time: 18.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 7.0
+              - resource: nic_cpu
+                units: 2.0
+          successors:
+            - serialize_resp
+        - name: serialize_resp
+          stage:
+            deterministic_service_time: 3.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 2.0
+      entry_points:
+        - db_lookup
+  - id: 1400
+    arrival_time: 0.0
+    dag:
+      nodes:
+        - name: db_lookup
+          stage:
+            deterministic_service_time: 18.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 6.0
+              - resource: nic_cpu
+                units: 2.0
+          successors:
+            - serialize_resp
+        - name: serialize_resp
+          stage:
+            deterministic_service_time: 3.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 2.0
+      entry_points:
+        - db_lookup
+  - id: 1500
+    arrival_time: 0.0
+    dag:
+      nodes:
+        - name: db_lookup
+          stage:
+            deterministic_service_time: 18.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 5.0
+              - resource: nic_cpu
+                units: 2.0
+          successors:
+            - serialize_resp
+        - name: serialize_resp
+          stage:
+            deterministic_service_time: 3.0
+            placement_default: host
+            placement_eligible:
+              - host
+              - nic
+            demands:
+              - resource: host_cpu
+                units: 2.0
+      entry_points:
+        - db_lookup

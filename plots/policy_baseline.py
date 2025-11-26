@@ -85,6 +85,9 @@ def aggregate(records: List[Dict[str, str]],
                 "rolling_sojourn_mean": float(row.get("rolling_sojourn_mean_latency_us", 0.0) or 0.0),
                 "rolling_sojourn_p95": float(row.get("rolling_sojourn_p95_latency_us", 0.0) or 0.0),
                 "rolling_sojourn_p99": float(row.get("rolling_sojourn_p99_latency_us", 0.0) or 0.0),
+                "admission_blocked": float(row.get("admission_limited_tasks", 0.0) or 0.0),
+                "admission_limit": float(row.get("admission_limit_last", 0.0) or 0.0),
+                "admission_active": 1.0 if str(row.get("admission_limit_active", "")).strip().lower() in {"true", "1", "yes"} else 0.0,
             }
         )
         if row.get("rolling_preset"):
@@ -156,12 +159,16 @@ def plot(results: List[Tuple[str, Metrics, Metadata]], output_path: pathlib.Path
     sojourn_mean = [metrics["rolling_sojourn_mean"] for _, metrics, _ in results]
     sojourn_p95 = [metrics["rolling_sojourn_p95"] for _, metrics, _ in results]
     sojourn_p99 = [metrics["rolling_sojourn_p99"] for _, metrics, _ in results]
+    admission_blocked = [metrics["admission_blocked"] for _, metrics, _ in results]
+    admission_limit = [metrics["admission_limit"] for _, metrics, _ in results]
+    admission_active = [metrics["admission_active"] for _, metrics, _ in results]
 
     x = range(len(names))
     width = 0.35
 
-    fig, axes = plt.subplots(2, 2, figsize=(16, 8))
-    throughput_axis, latency_axis, reorder_axis, queue_axis = axes.flatten()
+    fig, axes = plt.subplots(2, 3, figsize=(20, 10))
+    throughput_axis, latency_axis, reorder_axis = axes[0]
+    queue_axis, admission_axis, sojourn_axis = axes[1]
 
     throughput_bars = throughput_axis.bar(x, throughput, color="#4c72b0")
     throughput_axis.set_xticks(x)
@@ -236,7 +243,6 @@ def plot(results: List[Tuple[str, Metrics, Metadata]], output_path: pathlib.Path
             fontsize=8,
         )
 
-    max_queue_height = max(rolling_queue_peak + [1.0])
     queue_bars = queue_axis.bar(x, rolling_queue_avg, color="#ccb974", label="waiting queue avg")
     queue_axis.set_xticks(x)
     queue_axis.set_xticklabels(tick_labels, rotation=20, ha="right")
@@ -260,16 +266,42 @@ def plot(results: List[Tuple[str, Metrics, Metadata]], output_path: pathlib.Path
     handles, labels = queue_axis.get_legend_handles_labels()
     handles2, labels2 = util_axis.get_legend_handles_labels()
     queue_axis.legend(handles + handles2, labels + labels2, loc="upper left", fontsize=8)
-    for pos, mean, p95, p99 in zip(x, sojourn_mean, sojourn_p95, sojourn_p99):
-        queue_axis.text(
-            pos,
-            max_queue_height * 1.02,
-            f"soj μ={mean:.1f} p95={p95:.1f} p99={p99:.1f}us",
+
+    admission_bars = admission_axis.bar(x, admission_blocked, color="#92ad37", label="blocked tasks")
+    admission_axis.set_xticks(x)
+    admission_axis.set_xticklabels(tick_labels, rotation=20, ha="right")
+    admission_axis.set_ylabel("tasks blocked by admission")
+    admission_axis.set_title("Admission clamp impact")
+    admission_axis.grid(axis="y", linestyle="--", alpha=0.4)
+    for bar, blocked in zip(admission_bars, admission_blocked):
+        admission_axis.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            bar.get_height(),
+            f"{blocked:.0f}",
             ha="center",
             va="bottom",
-            fontsize=7,
-            rotation=30,
+            fontsize=8,
         )
+    limit_axis = admission_axis.twinx()
+    limit_axis.plot(x, admission_limit, marker="d", linestyle="--", color="#c44e52", label="limit")
+    limit_axis.set_ylabel("admission limit")
+    limit_axis.set_ylim(0.0, max(admission_limit + [1.0]) * 1.2)
+    limit_handles, limit_labels = admission_axis.get_legend_handles_labels()
+    handles_limit, labels_limit = limit_axis.get_legend_handles_labels()
+    admission_axis.legend(limit_handles + handles_limit, limit_labels + labels_limit, loc="upper left", fontsize=8)
+    for pos, active in zip(x, admission_active):
+        if active <= 0.0:
+            admission_axis.text(pos, max(admission_blocked + [0.0]) * 0.05 + 0.05, "inactive", ha="center", fontsize=8)
+
+    sojourn_axis.plot(x, sojourn_mean, marker="o", color="#4c72b0", label="mean")
+    sojourn_axis.plot(x, sojourn_p95, marker="s", color="#dd8452", label="p95")
+    sojourn_axis.plot(x, sojourn_p99, marker="^", color="#55a868", label="p99")
+    sojourn_axis.set_xticks(x)
+    sojourn_axis.set_xticklabels(tick_labels, rotation=20, ha="right")
+    sojourn_axis.set_ylabel("rolling sojourn (us)")
+    sojourn_axis.set_title("Rolling sojourn latency")
+    sojourn_axis.grid(axis="y", linestyle="--", alpha=0.4)
+    sojourn_axis.legend(fontsize=8)
 
     fig.suptitle("Policy baseline comparison")
     fig.tight_layout()

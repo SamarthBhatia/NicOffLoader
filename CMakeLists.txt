@@ -118,6 +118,26 @@ add_test(
 )
 
 add_test(
+    NAME policy_dsl_skew_dag_examples_test
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tools/cli/tests/policy_dsl_skew_dag_examples_test.py
+            --cli $<TARGET_FILE:nicloadoff_cli>
+            --profile ${CMAKE_SOURCE_DIR}/profiles/bf2_default.yaml
+            --workload ${CMAKE_SOURCE_DIR}/workloads/tests/skew_dag_stage_wait.yaml
+            --config ${CMAKE_SOURCE_DIR}/policies/examples/skew_dag_stage_balance.dsl.yaml
+)
+
+add_test(
+    NAME policy_dsl_skew_dag_nic_balance_test
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tools/cli/tests/policy_dsl_skew_dag_nic_balance_test.py
+            --cli $<TARGET_FILE:nicloadoff_cli>
+            --profile ${CMAKE_SOURCE_DIR}/profiles/bf2_default.yaml
+            --workload ${CMAKE_SOURCE_DIR}/workloads/tests/skew_dag_nic_stress.yaml
+            --config ${CMAKE_SOURCE_DIR}/policies/examples/skew_dag_nic_balance.dsl.yaml
+)
+
+add_test(
     NAME policy_prefer_adaptive_test
     COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_SOURCE_DIR}/tools/cli/tests/policy_prefer_adaptive_test.py

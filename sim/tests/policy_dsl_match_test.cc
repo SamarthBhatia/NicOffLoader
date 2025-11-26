@@ -31,6 +31,11 @@ std::filesystem::path write_config() {
     action:
       admission:
         max_active: 1
+  - match:
+      metadata:
+        arrival_label: cold
+    action:
+      reorder: prefer-host
 )";
 
     std::filesystem::path path = std::filesystem::temp_directory_path() / "policy_dsl_match.yaml";
@@ -91,6 +96,16 @@ nicloadoff::PolicyStateSnapshot make_combined_snapshot() {
     return snapshot;
 }
 
+nicloadoff::PolicyStateSnapshot make_fallback_snapshot() {
+    using namespace nicloadoff;
+    PolicyStateSnapshot snapshot = make_reorder_snapshot();
+    snapshot.scenario_metadata["arrival_label"] = "cold";
+    for (auto& task : snapshot.tasks) {
+        task.stage_label = "map";
+    }
+    return snapshot;
+}
+
 } // namespace
 
 int main() {
@@ -124,6 +139,16 @@ int main() {
         check(decision.waiting_order.has_value(), "stage match should reorder even when metadata also matches");
         check(decision.admission.has_value(), "metadata rule should still fire after reorder");
         check(decision.admission->max_active_tasks == 1, "admission rule should still cap active tasks at 1");
+    }
+
+    {
+        auto snapshot = make_fallback_snapshot();
+        policy::PolicyDecision decision = hook->evaluate(snapshot);
+        check(decision.waiting_order.has_value(), "metadata fallback should reorder when stage match fails");
+        const auto& order = *decision.waiting_order;
+        check(order.size() == snapshot.waiting_task_order.size(), "fallback reorder should keep queue width");
+        check(order[0] == 102 && order[1] == 101 && order[2] == 103,
+              "fallback reorder should prefer host-heavy tasks first");
     }
 
     return 0;

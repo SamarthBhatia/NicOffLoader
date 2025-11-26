@@ -181,6 +181,7 @@ bool BasicScheduler::try_start_task(TaskContext& ctx, SimTime timestamp) {
     }
 
     if (admission_limit_.has_value() && active_task_count_ >= *admission_limit_) {
+        ++policy_admission_blocked_tasks_;
         return false;
     }
 
@@ -418,6 +419,7 @@ void BasicScheduler::apply_admission_control(const policy::AdmissionControlDirec
         return;
     }
     admission_limit_ = directive.max_active_tasks;
+    policy_last_admission_limit_ = directive.max_active_tasks;
 }
 
 void BasicScheduler::record_waiting_queue_sample() {

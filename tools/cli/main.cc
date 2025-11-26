@@ -55,6 +55,26 @@ int main(int argc, char** argv) {
             std::cout << "Recent reorder rate (last " << policy_metrics.waiting_reorder_recent_task_count
                       << " tasks): " << format_value(policy_metrics.waiting_reorders_per_task_recent, 6) << "\n";
         }
+        if (policy_metrics.admission_limit_last || policy_metrics.admission_limited_tasks > 0 ||
+            policy_metrics.admission_limit_active) {
+            std::cout << "Policy admission limit: ";
+            if (policy_metrics.admission_limit_last) {
+                std::cout << *policy_metrics.admission_limit_last;
+            } else {
+                std::cout << "none";
+            }
+            if (policy_metrics.admission_limited_tasks > 0) {
+                std::cout << " (blocked " << policy_metrics.admission_limited_tasks << " task";
+                if (policy_metrics.admission_limited_tasks != 1) {
+                    std::cout << "s";
+                }
+                std::cout << ")";
+            }
+            if (!policy_metrics.admission_limit_active) {
+                std::cout << " [inactive]";
+            }
+            std::cout << "\n";
+        }
         const auto& rolling = summary.rolling_metrics;
         if (rolling.waiting_queue_depth.samples > 0) {
             std::cout << "Rolling queue avg/peak (latest): "

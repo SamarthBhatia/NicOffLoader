@@ -55,13 +55,19 @@ ROLLING_POLICY_COLUMNS = (
     "rolling_sojourn_p99_latency_us",
 )
 
+ADMISSION_POLICY_COLUMNS = (
+    "admission_limited_tasks",
+    "admission_limit_active",
+    "admission_limit_last",
+)
+
 REQUIRED_POLICY_COLUMNS = (
     "waiting_reorders",
     "waiting_reorders_per_task",
     "waiting_reorders_recent",
     "waiting_reorder_recent_task_count",
     "waiting_reorders_per_task_recent",
-) + ROLLING_POLICY_COLUMNS
+) + ADMISSION_POLICY_COLUMNS + ROLLING_POLICY_COLUMNS
 
 
 def missing_policy_columns(path: pathlib.Path) -> List[str]:
@@ -174,6 +180,32 @@ def ensure_dsl_preset_metadata(rows: List[Dict[str, str]]) -> List[str]:
     return failures
 
 
+def ensure_dsl_admission_metrics(rows: List[Dict[str, str]]) -> List[str]:
+    failures: List[str] = []
+    target = next((row for row in rows if row.get("run_name") == "dag-dsl-nic-balance"), None)
+    if not target:
+        failures.append("dag-dsl-nic-balance row missing from policy CSV (admission check)")
+        return failures
+    blocked_field = target.get("admission_limited_tasks")
+    if blocked_field is None:
+        failures.append("dag-dsl-nic-balance missing admission_limited_tasks column value")
+    limit_value = target.get("admission_limit_last", "")
+    if not limit_value:
+        failures.append("dag-dsl-nic-balance missing admission_limit_last column value")
+    else:
+        try:
+            limit = float(limit_value)
+        except ValueError:
+            failures.append(f"dag-dsl-nic-balance admission_limit_last not numeric: '{limit_value}'")
+            limit = 0.0
+        if limit < 0.0:
+            failures.append(f"dag-dsl-nic-balance admission_limit_last < 0: {limit_value}")
+    active_field = target.get("admission_limit_active")
+    if active_field is None:
+        failures.append("dag-dsl-nic-balance missing admission_limit_active column value")
+    return failures
+
+
 def run_acceptance(cli_path: pathlib.Path, manifest_path: pathlib.Path, csv_path: pathlib.Path, expected: pathlib.Path) -> int:
     run_batch(cli_path, manifest_path, csv_path)
     expectations = load_expected(expected)
@@ -210,6 +242,7 @@ def run_acceptance(cli_path: pathlib.Path, manifest_path: pathlib.Path, csv_path
     failures.extend(verify_queue_flip(cli_path))
     failures.extend(ensure_queue_flip_reorders(rows))
     failures.extend(ensure_dsl_preset_metadata(rows))
+    failures.extend(ensure_dsl_admission_metrics(rows))
 
     if failures:
         print("[policy_batch_acceptance] FAIL")
@@ -261,7 +294,7 @@ def verify_queue_flip(cli_path: pathlib.Path) -> list[str]:
     adaptive_report = run_queue_flip(cli_path, "prefer-adaptive", "policy_queue_flip_prefer_adaptive.json")
 
     nic_task_id = 202
-    host_task_id = 201
+    host_task_id = 203
     nic_queue_none = task_queue_time(none_report, nic_task_id)
     nic_queue_policy = task_queue_time(prefer_nic_report, nic_task_id)
     host_queue_none = task_queue_time(none_report, host_task_id)

@@ -572,6 +572,9 @@ struct SimulationSnapshot {
     std::size_t policy_waiting_reorders_recent{0};
     std::size_t policy_waiting_reorder_recent_task_count{0};
     double policy_waiting_reorders_per_task_recent{0.0};
+    std::size_t policy_admission_limited_tasks{0};
+    bool policy_admission_limit_active{false};
+    std::optional<std::size_t> policy_admission_limit_last;
     std::size_t rolling_queue_samples{0};
     double rolling_queue_latest{0.0};
     double rolling_queue_average{0.0};
@@ -727,6 +730,9 @@ class SimulationSession {
                 policy_snapshot.run_metrics.policy.waiting_reorder_recent_task_count;
             snapshot.policy_waiting_reorders_per_task_recent =
                 policy_snapshot.run_metrics.policy.waiting_reorders_per_task_recent;
+            snapshot.policy_admission_limited_tasks = policy_snapshot.run_metrics.policy.admission_limited_tasks;
+            snapshot.policy_admission_limit_last = policy_snapshot.run_metrics.policy.admission_limit_last;
+            snapshot.policy_admission_limit_active = policy_snapshot.run_metrics.policy.admission_limit_active;
             const auto& rolling = policy_snapshot.rolling_metrics;
             snapshot.rolling_queue_samples = rolling.waiting_queue_depth.samples;
             snapshot.rolling_queue_latest = rolling.waiting_queue_depth.latest;
@@ -1574,6 +1580,22 @@ void draw_right_panel(WINDOW* win, const AppState& state, const SimulationSnapsh
     if (snapshot.policy_waiting_reorder_recent_task_count > 0) {
         print_line("    Recent (" + std::to_string(snapshot.policy_waiting_reorder_recent_task_count) +
                    " tasks): " + format_double(snapshot.policy_waiting_reorders_per_task_recent, 4));
+    }
+    if (snapshot.policy_admission_limit_last || snapshot.policy_admission_limited_tasks > 0 ||
+        snapshot.policy_admission_limit_active) {
+        std::string limit_line = "  Policy admission limit: ";
+        if (snapshot.policy_admission_limit_last) {
+            limit_line += std::to_string(*snapshot.policy_admission_limit_last);
+        } else {
+            limit_line += "none";
+        }
+        if (!snapshot.policy_admission_limit_active) {
+            limit_line += " (inactive)";
+        }
+        print_line(limit_line);
+        if (snapshot.policy_admission_limited_tasks > 0) {
+            print_line("    Blocked tasks: " + std::to_string(snapshot.policy_admission_limited_tasks));
+        }
     }
     if (snapshot.rolling_queue_samples > 0) {
         print_line("  Rolling queue avg (" + std::to_string(snapshot.rolling_queue_samples) + " samples): " +

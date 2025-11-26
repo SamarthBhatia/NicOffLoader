@@ -830,7 +830,7 @@ BatchRunConfig parse_batch_run(const YAML::Node& run_node,
     if (rolling_overrides.sojourn_window_tasks) {
         config.options.rolling_sojourn_window_tasks = *rolling_overrides.sojourn_window_tasks;
     }
-    const bool has_schedule = run_node["rolling_window_schedule"];
+    const bool has_schedule = static_cast<bool>(run_node["rolling_window_schedule"]);
     if (has_schedule && run_node["rolling_window_preset"]) {
         throw std::runtime_error("batch run '" + config.name +
                                  "' cannot set both rolling_window_schedule and rolling_window_preset");
@@ -1344,7 +1344,16 @@ void write_report(const CliOptions& options,
     out << "    \"waiting_reorders_recent\": " << run_metrics.policy.waiting_reorders_recent << ",\n";
     out << "    \"waiting_reorder_recent_task_count\": " << run_metrics.policy.waiting_reorder_recent_task_count << ",\n";
     out << "    \"waiting_reorders_per_task_recent\": "
-        << format_double(run_metrics.policy.waiting_reorders_per_task_recent, 6) << "\n";
+        << format_double(run_metrics.policy.waiting_reorders_per_task_recent, 6) << ",\n";
+    out << "    \"admission_limited_tasks\": " << run_metrics.policy.admission_limited_tasks << ",\n";
+    out << "    \"admission_limit_active\": "
+        << (run_metrics.policy.admission_limit_active ? "true" : "false") << ",\n";
+    out << "    \"admission_limit_last\": ";
+    if (run_metrics.policy.admission_limit_last) {
+        out << *run_metrics.policy.admission_limit_last << "\n";
+    } else {
+        out << "null\n";
+    }
     out << "  },\n";
     out << "  \"rolling_metrics\": {\n";
     out << "    \"waiting_queue_depth\": {\n";
@@ -1940,7 +1949,8 @@ void write_batch_csv_header(std::ofstream& out, const std::vector<std::string>& 
     out << "run_name,profile,workload,policy,seed,host_mode,nic_mode,completed_tasks,makespan_us,"
            "throughput_per_sec,mean_latency_us,p95_latency_us,p99_latency_us,peak_waiting_queue_depth,"
            "waiting_reorders,waiting_reorders_per_task,waiting_reorders_recent,waiting_reorder_recent_task_count,"
-           "waiting_reorders_per_task_recent,output_path,"
+           "waiting_reorders_per_task_recent,admission_limited_tasks,admission_limit_active,admission_limit_last,"
+           "output_path,"
            "rolling_queue_samples,rolling_queue_latest,rolling_queue_average,rolling_queue_peak,"
            "rolling_host_util_samples,rolling_host_util_latest,rolling_host_util_average,rolling_host_util_peak,"
            "rolling_nic_util_samples,rolling_nic_util_latest,rolling_nic_util_average,rolling_nic_util_peak,"
@@ -2003,6 +2013,12 @@ void append_batch_csv_row(std::ofstream& out,
         << policy_metrics.waiting_reorders_recent << ","
         << policy_metrics.waiting_reorder_recent_task_count << ","
         << format_double(waiting_ratio_recent) << ","
+        << policy_metrics.admission_limited_tasks << ","
+        << (policy_metrics.admission_limit_active ? "true" : "false") << ",";
+    if (policy_metrics.admission_limit_last) {
+        out << *policy_metrics.admission_limit_last;
+    }
+    out << ","
         << result.options.output_path.string() << ","
         << rolling.waiting_queue_depth.samples << ","
         << format_double(rolling.waiting_queue_depth.latest) << ","

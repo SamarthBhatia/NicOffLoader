@@ -103,6 +103,9 @@ RunMetrics compute_run_metrics(const BasicScheduler& scheduler) {
     } else {
         metrics.policy.waiting_reorders_per_task_recent = 0.0;
     }
+    metrics.policy.admission_limited_tasks = scheduler.policy_admission_blocked_tasks();
+    metrics.policy.admission_limit_last = scheduler.policy_last_admission_limit();
+    metrics.policy.admission_limit_active = scheduler.admission_limit().has_value();
     return metrics;
 }
 
