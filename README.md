@@ -152,8 +152,16 @@ Prefer not to maintain bespoke scripts? The repo ships `tools/cli/rolling_window
 ```
 
 Whenever you pick a preset, the CLI injects `rolling_window_preset=<name>` into the run metadata (and batch CSVs) so downstream analysis can group results without scraping the raw `rolling_window_events` log.
+Need a quick inventory? `--list-rolling-presets` (optionally alongside `--rolling-window-preset-file <path>`) prints every preset in the current library and exits, making it easy to discover new entries after editing the YAML. You can also set `NICLOADOFF_ROLLING_PRESET_FILE=/path/to/custom.yaml` to change the default library without touching CLI args (the same env var drives the TUI).
 
-Every batch/manifest entry also accepts a `rolling_windows:` block with `queue_us`, `util_us`, and/or `sojourn_tasks` keys if you prefer YAML-based overrides, plus an optional `rolling_window_schedule:` block (either `events:` inline, `from_file: path/to/script.yaml`, or `preset: burst_sweep`) so sweeps/CLI manifests replay the same configure/reset timelines as the headless CLI. Simple CLI manifests can also set `rolling_window_preset: burst_sweep` (with an optional `rolling_window_preset_file` override) to reuse the stock library.
+Every batch/manifest entry also accepts a `rolling_windows:` block with `queue_us`, `util_us`, and/or `sojourn_tasks` keys if you prefer YAML-based overrides, plus an optional `rolling_window_schedule:` block (either `events:` inline, `from_file: path/to/script.yaml`, or `preset: burst_sweep`) so sweeps/CLI manifests replay the same configure/reset timelines as the headless CLI. If you want the manifest to consume a standalone schedule script, drop it beside the manifest and reference it directly:
+
+```yaml
+rolling_window_schedule:
+  from_file: schedules/nic_burst.yaml   # resolved relative to the manifest
+```
+
+Prefer the stock presets from the batch layer? Swap the block for `rolling_window_preset: nic_util_clamp` (and optionally `rolling_window_preset_file: tools/cli/rolling_window_presets.yaml`) to reuse the shared library without repeating the YAML events. Both approaches populate the CLI/TUI metadata automatically (`rolling_window_schedule_label` carries either a `file:` or `preset:` prefix, while `rolling_window_preset` captures the preset id) so normalized exports, batch CSVs, and plots can group runs by their rolling-window playback without scraping the raw event logs.
 
 #### DSL-driven policies
 
@@ -240,7 +248,7 @@ runs:
 ```
 
 Each run inherits the default `rolling_window_schedule` (or can supply its own block with `events:` or `from_file:`) so every CSV/export captures the exact configure/reset timeline you expect.
-Prefer a stock preset? Replace the block with `rolling_window_schedule: { preset: nic_util_clamp }` (and optionally `presets_file: ...`) to pull from `tools/cli/rolling_window_presets.yaml`.
+Prefer a stock preset? Replace the block with `rolling_window_schedule: { preset: nic_util_clamp }` (and optionally `presets_file: ...`) to pull from `tools/cli/rolling_window_presets.yaml`. Individual batch entries can also set `rolling_window_preset: nic_util_clamp` (plus `rolling_window_preset_file` when needed) or point at a per-run `rolling_window_schedule:` block; each run’s metadata automatically inherits `rolling_window_preset`/`rolling_window_schedule_label` so downstream analysis can filter on the exact playback used.
 
 Invoke it with:
 
@@ -268,7 +276,9 @@ The interactive TUI lets you inspect profiles, step through workloads, and exper
    ```bash
    ./build/tools/tui/nicloadoff_tui
    ```
-3. Use the on-screen hints—`↑/↓` navigate menus, `Tab` swaps between profile/workload lists, `Space` toggles run/pause, `n` steps a single event, `H`/`N` toggle deterministic vs. stochastic sampling, `m` cycles the `arrival_label` metadata (handy for DSL matches), `p` cycles policies (built-ins plus any DSL configs discovered under `policies/examples/`), `c` cycles the rolling-window presets (with `C` clearing the selection and `?` toggling the preset catalogue), `s` saves metrics, and `q` exits.
+3. Use the on-screen hints—`↑/↓` navigate menus, `Tab` swaps between profile/workload lists, `Space` toggles run/pause, `n` steps a single event, `H`/`N` toggle deterministic vs. stochastic sampling, `m` cycles the `arrival_label` metadata (handy for DSL matches), `p` cycles policies (built-ins plus any DSL configs discovered under `policies/examples/`), `c` cycles the rolling-window presets (with `C` clearing the selection, `L` reloading the preset file, and `?` toggling the preset catalogue), `s` saves metrics, and `q` exits.
+
+Set `NICLOADOFF_ROLLING_PRESET_FILE` before launching the TUI if you want to point at a custom preset library (defaults to `tools/cli/rolling_window_presets.yaml`). The `L` hotkey re-reads the file mid-session so tweaks land without restarting.
 
 The status panel shows the active policy, admission limits (if any), live queue/resource metrics, and the cumulative policy waiting-reorder count + per-task ratio so you can watch hooks make progress while stepping through events. When a DSL config is selected, the panel also prints the YAML path to confirm which rule file is driving the run.
 

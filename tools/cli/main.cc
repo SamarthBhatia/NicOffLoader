@@ -29,6 +29,10 @@ int main(int argc, char** argv) {
         print_usage(std::cout);
         return 0;
     }
+    if (options.list_rolling_presets) {
+        print_presets_listing(std::cout, options.rolling_window_preset_file);
+        return 0;
+    }
 
     try {
         if (options.batch_mode) {

@@ -39,6 +39,11 @@ def verify_report(report_path: pathlib.Path, preset: str) -> None:
     metadata = data.get("metadata", {})
     if metadata.get("rolling_window_preset") != preset:
         raise SystemExit(f"metadata missing rolling_window_preset={preset}")
+    rolling_window = data.get("rolling_window", {})
+    if rolling_window.get("preset") != preset:
+        raise SystemExit("rolling_window block missing preset entry")
+    if not rolling_window.get("schedule_label"):
+        raise SystemExit("rolling_window block missing schedule_label")
     events = data.get("rolling_window_events", [])
     if not events:
         raise SystemExit("preset run emitted no rolling_window_events")

@@ -49,6 +49,10 @@ def run_cli(cli: pathlib.Path,
 def verify_event_log(report_path: pathlib.Path) -> None:
     with report_path.open() as handle:
         data = json.load(handle)
+    rolling_window = data.get("rolling_window", {})
+    label = rolling_window.get("schedule_label")
+    if not label or not label.startswith("file:"):
+        raise SystemExit(f"missing rolling_window schedule_label (got {label})")
     events = data.get("rolling_window_events", [])
     if len(events) < 4:
         raise SystemExit(f"expected >=4 rolling_window_events, saw {len(events)}")

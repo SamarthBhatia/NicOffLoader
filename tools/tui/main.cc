@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cctype>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -32,6 +33,7 @@ namespace nicloadoff::tui {
 using nicloadoff::config::load_profile_from_file;
 
 constexpr const char* kRollingPresetMetadataKey = "rolling_window_preset";
+constexpr const char* kRollingScheduleMetadataKey = "rolling_window_schedule_label";
 
 struct WorkloadPreset {
     std::string name;
@@ -118,6 +120,19 @@ struct PolicyChoice {
     std::ostringstream oss;
     oss << "t=" << format_double(event.timestamp, 3) << " " << event_type_to_string(event.metadata.type) << " (#"
         << event.metadata.id << ")";
+    return oss.str();
+}
+
+[[nodiscard]] std::string format_rolling_event(const BasicScheduler::RollingWindowEventRecord& event) {
+    std::ostringstream oss;
+    oss << rolling_event_type_to_string(event.type) << " @" << format_double(event.timestamp, 3) << "us";
+    oss << " (queue " << format_double(event.config.queue_window_us, 0) << "us, util "
+        << format_double(event.config.utilization_window_us, 0) << "us, sojourn " << event.config.sojourn_window_tasks
+        << " tasks";
+    if (event.reset_samples) {
+        oss << ", reset";
+    }
+    oss << ")";
     return oss.str();
 }
 
@@ -816,10 +831,50 @@ struct AppState {
     std::string workload_description{};
     std::optional<std::string> active_rolling_preset_id;
     bool show_preset_catalog{false};
+    std::optional<std::string> rolling_schedule_label;
 
     std::unique_ptr<SimulationSession> session;
     bool host_stochastic{false};
     bool nic_stochastic{false};
+
+    bool reload_presets(bool announce) {
+        std::vector<std::string> errors;
+        auto presets = load_rolling_presets_from_file(rolling_preset_path, errors);
+        if (!errors.empty()) {
+            load_errors.insert(load_errors.end(), errors.begin(), errors.end());
+            if (announce) {
+                status_message = errors.back();
+            }
+            return false;
+        }
+        rolling_presets = std::move(presets);
+        rolling_preset_names.clear();
+        rolling_preset_names.reserve(rolling_presets.size());
+        for (const auto& preset : rolling_presets) {
+            std::string line = preset.id;
+            if (!preset.description.empty()) {
+                line += " — " + preset.description;
+            }
+            rolling_preset_names.push_back(std::move(line));
+        }
+        if (active_rolling_preset_id) {
+            auto it = std::find_if(rolling_presets.begin(),
+                                   rolling_presets.end(),
+                                   [&](const RollingWindowPreset& preset) {
+                                       return preset.id == *active_rolling_preset_id;
+                                   });
+            if (it != rolling_presets.end()) {
+                rolling_preset_index = static_cast<int>(std::distance(rolling_presets.begin(), it));
+            } else {
+                clear_active_preset("Rolling preset cleared (not found after reload).", announce);
+            }
+        }
+        if (announce) {
+            status_message = "Reloaded " + std::to_string(rolling_presets.size()) + " presets from " +
+                             rolling_preset_path.string() + ".";
+        }
+        return true;
+    }
 
     bool load_selection(bool preserve_seed = false) {
         if (workloads.empty()) {
@@ -878,9 +933,7 @@ struct AppState {
                 std::clamp(arrival_label_index, 0, static_cast<int>(arrival_labels.size()) - 1);
             metadata.emplace("arrival_label", arrival_labels[arrival_label_index]);
         }
-        if (active_rolling_preset_id) {
-            metadata.emplace(kRollingPresetMetadataKey, *active_rolling_preset_id);
-        }
+        sync_metadata_preset_key();
 
         WorkloadSpec spec = apply_service_modes(preset.spec);
         std::uint64_t seed_to_use = session && preserve_seed ? session->seed() : next_seed;
@@ -1020,6 +1073,11 @@ struct AppState {
         } else {
             metadata.erase(kRollingPresetMetadataKey);
         }
+        if (rolling_schedule_label) {
+            metadata[kRollingScheduleMetadataKey] = *rolling_schedule_label;
+        } else {
+            metadata.erase(kRollingScheduleMetadataKey);
+        }
         if (session) {
             session->set_metadata(metadata);
         }
@@ -1061,6 +1119,7 @@ struct AppState {
             return;
         }
         const auto& preset = rolling_presets[rolling_preset_index];
+        rolling_schedule_label = "preset:" + preset.id;
         sync_metadata_preset_key();
         if (session) {
             session->set_rolling_schedule(build_schedule_from_preset(preset));
@@ -1083,6 +1142,7 @@ struct AppState {
         }
         active_rolling_preset_id.reset();
         rolling_preset_index = -1;
+        rolling_schedule_label.reset();
         sync_metadata_preset_key();
         if (session) {
             session->clear_rolling_schedule();
@@ -1106,6 +1166,8 @@ struct AppState {
         if (active_rolling_preset_id) {
             clear_active_preset("Rolling preset cleared due to manual window adjustment.", false);
         }
+        rolling_schedule_label = "manual";
+        sync_metadata_preset_key();
     }
 
     void reset_rolling_samples() {
@@ -1208,6 +1270,21 @@ bool write_metrics_report(const SimulationSession& session,
         out << "  },\n";
     }
 
+    out << "  \"rolling_window\": {\n";
+    out << "    \"preset\": ";
+    if (state.active_rolling_preset_id) {
+        out << "\"" << json_escape(*state.active_rolling_preset_id) << "\"";
+    } else {
+        out << "null";
+    }
+    out << ",\n";
+    out << "    \"schedule_label\": ";
+    if (state.rolling_schedule_label) {
+        out << "\"" << json_escape(*state.rolling_schedule_label) << "\"\n";
+    } else {
+        out << "null\n";
+    }
+    out << "  },\n";
     out << "  \"totals\": {\n";
     const nicloadoff::RunMetrics run_metrics = nicloadoff::compute_run_metrics(session.metrics());
     const auto& aggregate = run_metrics.aggregate;
@@ -1348,6 +1425,7 @@ void draw_instructions(WINDOW* win, int start_row, const AppState& state) {
         "  z     Reset rolling metrics samples",
         "  c     Cycle rolling preset",
         "  C     Clear rolling preset",
+        "  L     Reload rolling preset file",
         "  ?     Toggle preset list",
         "  s     Save metrics to JSON",
         "  q     Quit",
@@ -1457,9 +1535,22 @@ void draw_right_panel(WINDOW* win, const AppState& state, const SimulationSnapsh
     if (policy_path) {
         print_line("    DSL config: " + policy_path->string());
     }
-    if (!state.rolling_presets.empty()) {
+    const std::vector<BasicScheduler::RollingWindowEventRecord>* rolling_events = nullptr;
+    if (state.session) {
+        rolling_events = &state.session->rolling_window_events();
+    }
+    const std::size_t rolling_event_count = rolling_events ? rolling_events->size() : 0;
+    if (!state.rolling_presets.empty() || state.rolling_schedule_label || rolling_event_count > 0) {
         const std::string preset_label = state.active_rolling_preset_id ? *state.active_rolling_preset_id : "none";
-        print_line("  Rolling preset: " + preset_label);
+        const std::string schedule_label =
+            state.rolling_schedule_label ? *state.rolling_schedule_label : std::string("none");
+        print_line("  Rolling preset summary:");
+        print_line("    Preset: " + preset_label);
+        print_line("    Schedule: " + schedule_label);
+        print_line("    Events applied: " + std::to_string(rolling_event_count));
+        if (rolling_event_count > 0 && rolling_events) {
+            print_line("      Last: " + format_rolling_event(rolling_events->back()));
+        }
     }
     if (!state.metadata.empty()) {
         print_line("  Scenario metadata:");
@@ -1615,15 +1706,10 @@ int main() {
         state.profile_names.push_back("Built-in sample profile");
     }
 
-    state.rolling_presets = load_rolling_presets_from_file(state.rolling_preset_path, state.load_errors);
-    state.rolling_preset_names.reserve(state.rolling_presets.size());
-    for (const auto& preset : state.rolling_presets) {
-        std::string line = preset.id;
-        if (!preset.description.empty()) {
-            line += " — " + preset.description;
-        }
-        state.rolling_preset_names.push_back(std::move(line));
+    if (const char* env = std::getenv("NICLOADOFF_ROLLING_PRESET_FILE")) {
+        state.rolling_preset_path = env;
     }
+    state.reload_presets(false);
 
     if (!state.workloads.empty()) {
         const auto& preset = state.workloads.front();
@@ -1856,6 +1942,10 @@ int main() {
             case 'z':
             case 'Z':
                 state.reset_rolling_samples();
+                break;
+            case 'l':
+            case 'L':
+                state.reload_presets(true);
                 break;
             case 'c':
                 state.select_next_preset();

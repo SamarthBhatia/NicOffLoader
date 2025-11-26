@@ -60,6 +60,10 @@ BASE_COLUMNS = [
     "rolling_sojourn_mean_latency_us",
     "rolling_sojourn_p95_latency_us",
     "rolling_sojourn_p99_latency_us",
+    "rolling_window_event_count",
+    "rolling_window_event_log",
+    "rolling_preset",
+    "rolling_schedule_label",
 ]
 
 NUMERIC_FIELDS = [
@@ -93,6 +97,7 @@ NUMERIC_FIELDS = [
     "rolling_sojourn_mean_latency_us",
     "rolling_sojourn_p95_latency_us",
     "rolling_sojourn_p99_latency_us",
+    "rolling_window_event_count",
 ]
 
 BASELINE_COLUMNS = [
@@ -178,7 +183,11 @@ def aggregate_rows(rows: List[Dict[str, str]],
 
     aggregated_rows: List[Dict[str, str]] = []
     for run_name, entries in grouped.items():
-        aggregate: Dict[str, str] = {key: entries[0][key] for key in BASE_COLUMNS if key not in NUMERIC_FIELDS}
+        aggregate: Dict[str, str] = {}
+        for key in BASE_COLUMNS:
+            if key in NUMERIC_FIELDS:
+                continue
+            aggregate[key] = entries[0].get(key, "")
         aggregate["run_name"] = run_name
         count = float(len(entries))
         numeric_avgs: Dict[str, float] = {}

@@ -95,6 +95,7 @@ runs:
     workload: ../../workloads/examples/skew_dag.yaml
     policy: dsl
     policy_config: ../../policies/examples/skew_dag_nic_balance.dsl.yaml
+    rolling_window_preset: nic_util_clamp
     metadata:
       workload_label: skew_dag
       arrival_model: dag-burst

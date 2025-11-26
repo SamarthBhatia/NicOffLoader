@@ -147,6 +147,33 @@ def ensure_queue_flip_reorders(rows: List[Dict[str, str]]) -> List[str]:
     return failures
 
 
+def ensure_dsl_preset_metadata(rows: List[Dict[str, str]]) -> List[str]:
+    failures: List[str] = []
+    target = next((row for row in rows if row.get("run_name") == "dag-dsl-nic-balance"), None)
+    if not target:
+        failures.append("dag-dsl-nic-balance row missing from policy CSV")
+        return failures
+    preset = target.get("rolling_preset", "")
+    if preset != "nic_util_clamp":
+        failures.append(f"dag-dsl-nic-balance rolling_preset expected nic_util_clamp but saw '{preset}'")
+    schedule_label = target.get("rolling_schedule_label", "")
+    if schedule_label != "preset:nic_util_clamp":
+        failures.append(
+            f"dag-dsl-nic-balance rolling_schedule_label expected preset:nic_util_clamp but saw '{schedule_label}'"
+        )
+    try:
+        event_count = float(target.get("rolling_window_event_count", 0.0) or 0.0)
+    except ValueError:
+        failures.append("dag-dsl-nic-balance rolling_window_event_count is not numeric")
+        event_count = 0.0
+    if event_count <= 0.0:
+        failures.append("dag-dsl-nic-balance rolling_window_event_count <= 0 (preset never applied?)")
+    event_log = target.get("rolling_window_event_log", "")
+    if not event_log:
+        failures.append("dag-dsl-nic-balance rolling_window_event_log is empty")
+    return failures
+
+
 def run_acceptance(cli_path: pathlib.Path, manifest_path: pathlib.Path, csv_path: pathlib.Path, expected: pathlib.Path) -> int:
     run_batch(cli_path, manifest_path, csv_path)
     expectations = load_expected(expected)
@@ -182,6 +209,7 @@ def run_acceptance(cli_path: pathlib.Path, manifest_path: pathlib.Path, csv_path
 
     failures.extend(verify_queue_flip(cli_path))
     failures.extend(ensure_queue_flip_reorders(rows))
+    failures.extend(ensure_dsl_preset_metadata(rows))
 
     if failures:
         print("[policy_batch_acceptance] FAIL")

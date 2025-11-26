@@ -45,6 +45,8 @@ struct CliOptions {
     std::vector<RollingWindowScheduleEvent> rolling_window_schedule;
     std::optional<std::string> rolling_window_preset_id;
     std::filesystem::path rolling_window_preset_file;
+    std::optional<std::string> rolling_window_schedule_label;
+    bool list_rolling_presets{false};
 };
 
 struct RunSummary {
@@ -67,6 +69,7 @@ struct RunSummary {
 void print_usage(std::ostream& out);
 bool parse_arguments(int argc, char** argv, CliOptions& options, std::string& error);
 RunSummary run_simulation(const CliOptions& options);
+void print_presets_listing(std::ostream& out, const std::filesystem::path& preset_path);
 struct BatchRunSummary {
     std::string name;
     CliOptions options;

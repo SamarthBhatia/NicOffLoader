@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import pathlib
 import sys
+from typing import List
 try:
     import pandas as pd
 except ImportError as exc:  # pragma: no cover - dependency hint
@@ -95,15 +96,40 @@ def print_table(subset: pd.DataFrame) -> None:
         "rolling_sojourn_p95_latency_us",
         "rolling_sojourn_p99_latency_us",
     ]
+    for column in ("rolling_preset", "rolling_schedule_label"):
+        if column in subset.columns:
+            columns.append(column)
     view = subset[columns]
     print(view.to_string(index=False))
+
+
+def build_tick_labels(subset: pd.DataFrame) -> List[str]:
+    tick_labels: List[str] = []
+    have_preset = "rolling_preset" in subset.columns
+    have_schedule = "rolling_schedule_label" in subset.columns
+    for idx, name in enumerate(subset["run_name"]):
+        details: List[str] = []
+        preset_value = ""
+        if have_preset:
+            preset_value = str(subset["rolling_preset"].iloc[idx] or "").strip()
+            if preset_value:
+                details.append(f"P={preset_value}")
+        if have_schedule:
+            schedule_value = str(subset["rolling_schedule_label"].iloc[idx] or "").strip()
+            if schedule_value and schedule_value != preset_value:
+                details.append(f"S={schedule_value}")
+        if details:
+            tick_labels.append(f"{name}\n({' | '.join(details)})")
+        else:
+            tick_labels.append(str(name))
+    return tick_labels
 
 
 def render_plot(subset: pd.DataFrame, output_path: pathlib.Path) -> None:
     plt = ensure_matplotlib()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     x = range(len(subset))
-    names = subset["run_name"]
+    tick_labels = build_tick_labels(subset)
     total_ratio = subset["waiting_reorders_per_task"]
     recent_ratio = subset["waiting_reorders_per_task_recent"]
 
@@ -122,7 +148,7 @@ def render_plot(subset: pd.DataFrame, output_path: pathlib.Path) -> None:
     reorder_ax.bar([pos - width / 2 for pos in x], total_ratio, width=width, label="per-task (entire run)", color="#c44e52")
     reorder_ax.bar([pos + width / 2 for pos in x], recent_ratio, width=width, label="per-task (recent window)", color="#8172b3")
     reorder_ax.set_xticks(list(x))
-    reorder_ax.set_xticklabels(names, rotation=30, ha="right")
+    reorder_ax.set_xticklabels(tick_labels, rotation=30, ha="right")
     reorder_ax.set_ylabel("waiting reorders per task")
     reorder_ax.set_title("Cumulative vs. rolling reorder ratios")
     reorder_ax.grid(axis="y", linestyle="--", alpha=0.4)
@@ -136,7 +162,7 @@ def render_plot(subset: pd.DataFrame, output_path: pathlib.Path) -> None:
         sojourn_p95 = subset.get("rolling_sojourn_p95_latency_us")
         queue_bars = queue_ax.bar(x, queue_avg, width=0.5, color="#ccb974", label="queue avg")
         queue_ax.set_xticks(list(x))
-        queue_ax.set_xticklabels(names, rotation=30, ha="right")
+        queue_ax.set_xticklabels(tick_labels, rotation=30, ha="right")
         queue_ax.set_ylabel("waiting queue (tasks)")
         queue_ax.set_title("Rolling queue depth & utilization")
         queue_ax.grid(axis="y", linestyle="--", alpha=0.4)

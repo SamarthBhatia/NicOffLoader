@@ -145,6 +145,15 @@ add_test(
             --preset-file ${CMAKE_SOURCE_DIR}/tools/cli/rolling_window_presets.yaml
 )
 
+add_test(
+    NAME rolling_window_manifest_schedule_test
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tools/cli/tests/rolling_window_manifest_schedule_test.py
+            --cli $<TARGET_FILE:nicloadoff_cli>
+            --profile ${CMAKE_SOURCE_DIR}/profiles/bf2_default.yaml
+            --workload ${CMAKE_SOURCE_DIR}/workloads/tests/rolling_spike.yaml
+)
+
 add_custom_target(
     policy_analysis
     COMMAND ${CMAKE_SOURCE_DIR}/experiments/policy_baseline/run_analysis.sh

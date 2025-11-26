@@ -16,6 +16,31 @@ except ImportError as exc:  # pragma: no cover - dependency hint
 
 
 Metrics = Dict[str, float]
+Metadata = Dict[str, str]
+
+
+def _normalize_schedule_label(label: str) -> str:
+    if not label:
+        return ""
+    if label.startswith("preset:"):
+        return label.split(":", 1)[1]
+    if label.startswith("file:"):
+        path = pathlib.Path(label.split(":", 1)[1])
+        return f"file:{path.stem}"
+    return label
+
+
+def _format_tick_label(name: str, meta: Metadata) -> str:
+    preset = meta.get("rolling_preset", "").strip()
+    schedule = _normalize_schedule_label(meta.get("rolling_schedule_label", "").strip())
+    details: List[str] = []
+    if preset:
+        details.append(f"P={preset}")
+    if schedule and schedule != preset:
+        details.append(f"S={schedule}")
+    if details:
+        return f"{name}\n({' | '.join(details)})"
+    return name
 
 
 def load_records(csv_path: pathlib.Path) -> List[Dict[str, str]]:
@@ -30,8 +55,9 @@ def load_records(csv_path: pathlib.Path) -> List[Dict[str, str]]:
 
 def aggregate(records: List[Dict[str, str]],
               workload_filter: str,
-              arrival_filter: str) -> List[Tuple[str, Metrics]]:
+              arrival_filter: str) -> List[Tuple[str, Metrics, Metadata]]:
     grouped: Dict[str, List[Metrics]] = defaultdict(list)
+    metadata_by_run: Dict[str, Metadata] = defaultdict(dict)
     for row in records:
         if workload_filter and row.get("workload_label", "") != workload_filter:
             continue
@@ -61,8 +87,12 @@ def aggregate(records: List[Dict[str, str]],
                 "rolling_sojourn_p99": float(row.get("rolling_sojourn_p99_latency_us", 0.0) or 0.0),
             }
         )
+        if row.get("rolling_preset"):
+            metadata_by_run[key]["rolling_preset"] = row["rolling_preset"]
+        if row.get("rolling_schedule_label"):
+            metadata_by_run[key]["rolling_schedule_label"] = row["rolling_schedule_label"]
 
-    summaries: List[Tuple[str, Metrics]] = []
+    summaries: List[Tuple[str, Metrics, Metadata]] = []
     for name, entries in grouped.items():
         count = float(len(entries))
         summary = {}
@@ -88,7 +118,7 @@ def aggregate(records: List[Dict[str, str]],
             "rolling_sojourn_p99",
         ]:
             summary[metric] = sum(entry[metric] for entry in entries) / count
-        summaries.append((name, summary))
+        summaries.append((name, summary, metadata_by_run.get(name, {})))
     summaries.sort(key=lambda item: item[0])
     return summaries
 
@@ -106,25 +136,26 @@ def annotate_bars(axis, bars):
         )
 
 
-def plot(results: List[Tuple[str, Metrics]], output_path: pathlib.Path) -> None:
+def plot(results: List[Tuple[str, Metrics, Metadata]], output_path: pathlib.Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    names = [name for name, _ in results]
-    throughput = [metrics["throughput"] for _, metrics in results]
-    mean_latency = [metrics["mean_latency"] for _, metrics in results]
-    p95_latency = [metrics["p95_latency"] for _, metrics in results]
-    peak_queue = [metrics["peak_queue"] for _, metrics in results]
-    waiting_reorders = [metrics["waiting_reorders"] for _, metrics in results]
-    waiting_reorders_recent = [metrics["waiting_reorders_recent"] for _, metrics in results]
-    waiting_ratio_total = [metrics["waiting_ratio_total"] for _, metrics in results]
-    waiting_ratio_recent = [metrics["waiting_ratio_recent"] for _, metrics in results]
-    waiting_recent_window = [metrics["waiting_recent_window"] for _, metrics in results]
-    rolling_queue_avg = [metrics["rolling_queue_avg"] for _, metrics in results]
-    rolling_queue_peak = [metrics["rolling_queue_peak"] for _, metrics in results]
-    host_util_avg = [metrics["rolling_host_util_avg"] for _, metrics in results]
-    nic_util_avg = [metrics["rolling_nic_util_avg"] for _, metrics in results]
-    sojourn_mean = [metrics["rolling_sojourn_mean"] for _, metrics in results]
-    sojourn_p95 = [metrics["rolling_sojourn_p95"] for _, metrics in results]
-    sojourn_p99 = [metrics["rolling_sojourn_p99"] for _, metrics in results]
+    names = [name for name, _, _ in results]
+    tick_labels = [_format_tick_label(name, meta) for name, _, meta in results]
+    throughput = [metrics["throughput"] for _, metrics, _ in results]
+    mean_latency = [metrics["mean_latency"] for _, metrics, _ in results]
+    p95_latency = [metrics["p95_latency"] for _, metrics, _ in results]
+    peak_queue = [metrics["peak_queue"] for _, metrics, _ in results]
+    waiting_reorders = [metrics["waiting_reorders"] for _, metrics, _ in results]
+    waiting_reorders_recent = [metrics["waiting_reorders_recent"] for _, metrics, _ in results]
+    waiting_ratio_total = [metrics["waiting_ratio_total"] for _, metrics, _ in results]
+    waiting_ratio_recent = [metrics["waiting_ratio_recent"] for _, metrics, _ in results]
+    waiting_recent_window = [metrics["waiting_recent_window"] for _, metrics, _ in results]
+    rolling_queue_avg = [metrics["rolling_queue_avg"] for _, metrics, _ in results]
+    rolling_queue_peak = [metrics["rolling_queue_peak"] for _, metrics, _ in results]
+    host_util_avg = [metrics["rolling_host_util_avg"] for _, metrics, _ in results]
+    nic_util_avg = [metrics["rolling_nic_util_avg"] for _, metrics, _ in results]
+    sojourn_mean = [metrics["rolling_sojourn_mean"] for _, metrics, _ in results]
+    sojourn_p95 = [metrics["rolling_sojourn_p95"] for _, metrics, _ in results]
+    sojourn_p99 = [metrics["rolling_sojourn_p99"] for _, metrics, _ in results]
 
     x = range(len(names))
     width = 0.35
@@ -134,7 +165,7 @@ def plot(results: List[Tuple[str, Metrics]], output_path: pathlib.Path) -> None:
 
     throughput_bars = throughput_axis.bar(x, throughput, color="#4c72b0")
     throughput_axis.set_xticks(x)
-    throughput_axis.set_xticklabels(names, rotation=20, ha="right")
+    throughput_axis.set_xticklabels(tick_labels, rotation=20, ha="right")
     throughput_axis.set_ylabel("throughput (tasks/s)")
     throughput_axis.set_title("Policy throughput")
     throughput_axis.grid(axis="y", linestyle="--", alpha=0.4)
@@ -157,7 +188,7 @@ def plot(results: List[Tuple[str, Metrics]], output_path: pathlib.Path) -> None:
     for pos, value in zip(x, peak_queue):
         latency_axis.text(pos, max(mean_latency + p95_latency) * 1.02, f"peak q={value:.0f}", ha="center", fontsize=9)
     latency_axis.set_xticks(x)
-    latency_axis.set_xticklabels(names, rotation=20, ha="right")
+    latency_axis.set_xticklabels(tick_labels, rotation=20, ha="right")
     latency_axis.set_ylabel("latency (us)")
     latency_axis.set_title("Latency comparison")
     latency_axis.grid(axis="y", linestyle="--", alpha=0.4)
@@ -178,7 +209,7 @@ def plot(results: List[Tuple[str, Metrics]], output_path: pathlib.Path) -> None:
         color="#8172b3",
     )
     reorder_axis.set_xticks(x)
-    reorder_axis.set_xticklabels(names, rotation=20, ha="right")
+    reorder_axis.set_xticklabels(tick_labels, rotation=20, ha="right")
     reorder_axis.set_ylabel("waiting reorders per task")
     reorder_axis.set_title("Policy reorder rate (total vs recent)")
     reorder_axis.grid(axis="y", linestyle="--", alpha=0.4)
@@ -208,7 +239,7 @@ def plot(results: List[Tuple[str, Metrics]], output_path: pathlib.Path) -> None:
     max_queue_height = max(rolling_queue_peak + [1.0])
     queue_bars = queue_axis.bar(x, rolling_queue_avg, color="#ccb974", label="waiting queue avg")
     queue_axis.set_xticks(x)
-    queue_axis.set_xticklabels(names, rotation=20, ha="right")
+    queue_axis.set_xticklabels(tick_labels, rotation=20, ha="right")
     queue_axis.set_ylabel("waiting queue (tasks)")
     queue_axis.set_title("Rolling queue depth & utilization")
     queue_axis.grid(axis="y", linestyle="--", alpha=0.4)

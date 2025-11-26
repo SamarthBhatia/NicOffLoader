@@ -45,7 +45,13 @@ ROLLING_COLUMNS = [
     ("sojourn_p95", "rolling_sojourn_p95_latency_us"),
     ("sojourn_p99", "rolling_sojourn_p99_latency_us"),
 ]
-DEFAULT_METADATA_COLUMNS = ["arrival_label", "background_load", "zipf_alpha"]
+DEFAULT_METADATA_COLUMNS = [
+    "arrival_label",
+    "background_load",
+    "zipf_alpha",
+    "rolling_preset",
+    "rolling_schedule_label",
+]
 
 
 def compute_reorder_ratio(row: Dict[str, str]) -> float:
